@@ -18,7 +18,6 @@ import lombok.Setter;
 public class VehicleJpaEntity extends PanacheEntityBase {
 
     @Id
-    // allocationSize = 1 matches the sequence's INCREMENT BY 1; the default of 50 overlaps blocks.
     @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "vehicles_seq")
     @SequenceGenerator(name = "vehicles_seq", sequenceName = "vehicles_seq", allocationSize = 1)
     public Long id;
@@ -28,8 +27,6 @@ public class VehicleJpaEntity extends PanacheEntityBase {
     private String modelName;
     private Integer modelYear;
 
-    // D2: decoupled from CustomerJpaEntity — owner is a plain logical reference (no @ManyToOne FK),
-    // kept in the existing owner_id column. "Vehicle always has an owner" is enforced in the use case.
     @Column(name = "owner_id")
     private Long customerId;
 }

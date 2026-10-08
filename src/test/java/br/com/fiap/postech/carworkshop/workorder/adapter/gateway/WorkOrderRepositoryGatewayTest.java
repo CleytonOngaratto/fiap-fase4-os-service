@@ -27,9 +27,6 @@ class WorkOrderRepositoryGatewayTest {
     @Inject
     WorkOrderPanacheRepository workOrderRepository;
 
-    // Isolamento: @TestTransaction reverte tudo ao final; o deleteAll() (clean slate) roda dentro da
-    // transação e é desfeito no rollback, preservando o seed compartilhado para as outras classes.
-
     @Test
     @TestTransaction
     void save_then_findById_preserves_customer_vehicle_and_snapshots() {

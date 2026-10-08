@@ -1,18 +1,4 @@
-﻿<#
-.SYNOPSIS
-    Instala a integração de infraestrutura Kubernetes do New Relic (chart nri-bundle) no EKS.
-
-.DESCRIPTION
-    O agente Java reporta a APLICAÇÃO; este bundle reporta o CLUSTER (nós, pods, deployments,
-    eventos). É um release Helm separado: o cd.yml não o conhece, e a infraestrutura é destruída
-    entre sessões, então isto roda a cada sessão — não uma vez.
-
-    Valores em k8s/newrelic/values.yaml. Detalhes no README, em Observabilidade.
-
-.PARAMETER Uninstall
-    Remove o release e o namespace, para iterar sem recriar o cluster.
-#>
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$Region       = "us-east-1",
     [string]$ChartVersion = "8.0.22",
@@ -32,8 +18,7 @@ function Write-Step { param([string]$Message) Write-Host "`n==> $Message" -Foreg
 function Write-Note { param([string]$Message) Write-Host "    $Message" -ForegroundColor DarkGray }
 function Write-Alert { param([string]$Message) Write-Host "    [aviso] $Message" -ForegroundColor Yellow }
 
-# No PS 5.1, redirecionar o stderr de um executável nativo vira NativeCommandError — e com
-# $ErrorActionPreference = 'Stop' isso derruba o script numa pergunta legítima. Igual ao deploy.ps1.
+# PS 5.1: stderr de executavel nativo vira NativeCommandError; o 'Continue' local evita derrubar a sondagem.
 function Invoke-Probe {
     param([Parameter(Mandatory)][string]$Exe, [Parameter(Mandatory)][string[]]$ProbeArgs)
     $ErrorActionPreference = "Continue"
@@ -128,8 +113,7 @@ $nsYaml = & kubectl create namespace $Namespace --dry-run=client -o yaml
 $nsYaml | & kubectl apply -f - | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Falha ao criar/atualizar o namespace '$Namespace'" }
 
-# Por stdin, e não por `--set` do helm nem por values file: argumento de linha de comando aparece
-# na process list, e um values com segredo seria uma segunda cópia da chave em disco.
+# Por stdin: --set aparece na process list, e um values com segredo seria outra copia da chave em disco.
 $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($licenseKey))
 $secretYaml = @(
     "apiVersion: v1",
@@ -165,7 +149,6 @@ Invoke-Checked -Exe "helm" -CArgs @(
 Write-Step "Componentes"
 Invoke-Checked -Exe "kubectl" -CArgs @("-n", $Namespace, "get", "daemonset,deployment,pods", "-o", "wide")
 
-# O logging tem que estar AUSENTE do cluster, não só "desligado no values".
 $logging = Invoke-Probe -Exe "kubectl" -ProbeArgs @(
     "-n", $Namespace, "get", "daemonset", "-o", "jsonpath={.items[*].metadata.name}")
 if ($logging -match "logging|fluent") {
@@ -176,8 +159,6 @@ if ($logging -match "logging|fluent") {
 }
 
 
-# Por nó, e não pelo total do cluster: os Deployments do bundle caem todos no mesmo nó, e é ele
-# que passa a limitar quantas réplicas da aplicação cabem.
 Write-Step "Memória por nó (requests — é o que o agendador enxerga)"
 
 $appRequest = Invoke-Probe -Exe "kubectl" -ProbeArgs @(
@@ -191,8 +172,7 @@ function ConvertTo-Mi {
         '^(\d+(\.\d+)?)Mi$' { return [double]$matches[1] }
         '^(\d+(\.\d+)?)Gi$' { return [double]$matches[1] * 1024 }
         '^(\d+(\.\d+)?)Ki$' { return [double]$matches[1] / 1024 }
-        # M e G do Kubernetes sao decimais. O sufixo 1MB do PowerShell e binario e daria 1:1 com
-        # Mi — os requests do chart vem em "150M" e a conta sairia 7% otimista.
+        # M e G do Kubernetes sao decimais; o 1MB do PowerShell e binario.
         '^(\d+(\.\d+)?)M$'  { return [double]$matches[1] * 1000000 / 1048576 }
         '^(\d+(\.\d+)?)G$'  { return [double]$matches[1] * 1000000000 / 1048576 }
         '^(\d+)$'           { return [double]$matches[1] / 1048576 }

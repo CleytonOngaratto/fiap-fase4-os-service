@@ -21,8 +21,6 @@ public class DiagnosisSchedulerService {
     @Scheduled(every = "10s", identity = "diagnosis-scheduler")
     @Transactional
     public void scheduleDiagnosisForNewOrders() {
-        // No per-tick logging: this runs every 10s and would flood the logs. Only the actual
-        // status change below is logged, so the output stays meaningful.
         List<WorkOrderJpaEntity> receivedOrders = workOrderRepository.findByStatus(StatusWO.RECEIVED);
         if (receivedOrders.isEmpty()) {
             return;

@@ -13,10 +13,6 @@ class CustomerRepositoryTest {
     @Inject
     CustomerPanacheRepository customerRepository;
 
-    // Isolamento: @TestTransaction reverte tudo ao final de cada teste, então o deleteAll() (clean
-    // slate) roda DENTRO da transação e é desfeito no rollback — o seed compartilhado do H2 fica
-    // intacto para as outras classes @QuarkusTest (independe da ordem de execução).
-
     @Test
     @TestTransaction
     void testFindByDocument_should_return_customer_when_document_exists() {

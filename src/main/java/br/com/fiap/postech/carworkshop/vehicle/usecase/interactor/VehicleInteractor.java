@@ -13,10 +13,6 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
 
-/**
- * Framework-agnostic use case (D4/V4): no {@code jakarta.*}, dependencies injected by constructor.
- * CDI wiring lives in {@code vehicle.infrastructure.config.VehicleModuleConfig}.
- */
 @Slf4j
 public class VehicleInteractor implements VehicleUseCase {
 
@@ -62,8 +58,6 @@ public class VehicleInteractor implements VehicleUseCase {
         validator.validate(request);
         repository.findByVehiclePlate(request.vehiclePlate())
                 .ifPresent(v -> { throw new ValidationException("Vehicle plate already exists."); });
-        // D2/D3: a vehicle ALWAYS has an owner — customerId is mandatory and must reference an
-        // existing customer. Enforced here (no DB NOT NULL); the gateway only persists.
         if (request.customerId() == null || request.customerId() <= 0) {
             throw new ValidationException("customerId is required and must be greater than 0.");
         }
@@ -94,7 +88,6 @@ public class VehicleInteractor implements VehicleUseCase {
         existing.setManufacturer(request.manufacturer());
         existing.setModelName(request.modelName());
         existing.setModelYear(request.modelYear());
-        // customerId is immutable — set only on create; the request's customerId is ignored here.
         repository.save(existing);
     }
 

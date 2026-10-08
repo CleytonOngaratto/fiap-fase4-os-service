@@ -16,8 +16,6 @@ VALUES (3, 'P003', 'Mahle', 'Filtro de ar', 40.00, 'UNITARY', 4);
 ALTER SEQUENCE auto_service_SEQ RESTART WITH 3;
 ALTER SEQUENCE parts_and_supply_SEQ RESTART WITH 4;
 
--- Customers are required so vehicle creation (which now validates an existing owner, D2/D3)
--- can reference customerId = 1..3. Mirrors the production seed in V1.0.0__oficina.sql.
 INSERT INTO customers (id, name, document, rg, email, number)
 VALUES (1, 'John Silva', '12345678901', 'MG123456789', 'john.silva@email.com', '11987654321');
 INSERT INTO customers (id, name, document, rg, email, number)

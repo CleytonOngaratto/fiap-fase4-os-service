@@ -17,12 +17,6 @@ import static io.restassured.RestAssured.given;
 import static org.hamcrest.CoreMatchers.is;
 import static org.mockito.Mockito.when;
 
-/**
- * F10. Ao contrário de {@link CustomerTrackingControllerTest}, que simula a identidade com
- * {@code @TestSecurity}, aqui os tokens são assinados de verdade: o de CUSTOMER tem a forma exata
- * que a Lambda de autenticacao emite, então este teste prova que os dois repos concordam no contrato —
- * e não apenas que a anotação está no controller.
- */
 @QuarkusTest
 class WorkOrderTrackingSecurityTest {
 

@@ -15,9 +15,6 @@ class UserRepositoryTest {
     @Inject
     UserPanacheRepository userRepository;
 
-    // Isolamento: @TestTransaction reverte tudo ao final; o deleteAll() (clean slate) roda dentro da
-    // transação e é desfeito no rollback, preservando o seed compartilhado para as outras classes.
-
     @Test
     @TestTransaction
     void testFindByUsername_should_return_user_when_username_exists() {

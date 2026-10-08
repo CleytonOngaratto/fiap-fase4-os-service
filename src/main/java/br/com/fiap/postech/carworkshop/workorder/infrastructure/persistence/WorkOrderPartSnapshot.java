@@ -35,9 +35,6 @@ public class WorkOrderPartSnapshot {
     @Enumerated(EnumType.STRING)
     private TypeProductEnum type;
 
-    /**
-     * Stock level at order creation (display fidelity — mirrors what the order showed when it pointed
-     * at the live part). NOT "quantity consumed by this order"; stock consumption stays in inventory.
-     */
+    // Estoque da peça na criação da OS, não a quantidade consumida por ela.
     private Integer quantity;
 }

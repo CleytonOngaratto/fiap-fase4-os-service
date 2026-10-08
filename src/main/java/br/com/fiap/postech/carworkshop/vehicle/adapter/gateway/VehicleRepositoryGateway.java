@@ -12,11 +12,6 @@ import jakarta.transaction.Transactional;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * Single responsibility (V6): this gateway only persists vehicles. Customer existence is no longer
- * its concern — that moved to {@link CustomerExistenceGateway}. The owner is stored as a plain
- * {@code Long customerId} (column {@code owner_id}), copied straight by the mapper (D2).
- */
 @ApplicationScoped
 public class VehicleRepositoryGateway implements VehicleRepositoryPort {
 
@@ -50,7 +45,6 @@ public class VehicleRepositoryGateway implements VehicleRepositoryPort {
             existing.setManufacturer(vehicle.getManufacturer());
             existing.setModelName(vehicle.getModelName());
             existing.setModelYear(vehicle.getModelYear());
-            // customerId is immutable — set only on create, never touched on update.
             return mapper.toDomain(existing);
         }
         VehicleJpaEntity entity = mapper.toJpaEntity(vehicle);

@@ -12,11 +12,6 @@ import br.com.fiap.postech.carworkshop.workorder.usecase.port.out.WorkOrderRepos
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Produces;
 
-/**
- * CDI wiring for the work order use case. The framework annotation lives HERE so the
- * {@link WorkOrderInteractor} stays pure Java (D4/V4): no {@code jakarta.*} in the use case,
- * dependencies injected by constructor. Mirrors the VehicleModuleConfig reference pattern.
- */
 @ApplicationScoped
 public class WorkOrderModuleConfig {
 

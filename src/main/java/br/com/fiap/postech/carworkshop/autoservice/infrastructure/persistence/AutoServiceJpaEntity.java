@@ -25,7 +25,6 @@ import java.math.BigDecimal;
 public class AutoServiceJpaEntity extends PanacheEntityBase {
 
     @Id
-    // allocationSize = 1 matches the sequence's INCREMENT BY 1; the default of 50 overlaps blocks.
     @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "auto_service_seq")
     @SequenceGenerator(name = "auto_service_seq", sequenceName = "auto_service_seq", allocationSize = 1)
     public Long id;

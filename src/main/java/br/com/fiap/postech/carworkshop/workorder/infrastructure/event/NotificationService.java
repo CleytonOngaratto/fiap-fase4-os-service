@@ -4,9 +4,6 @@ import br.com.fiap.postech.carworkshop.workorder.usecase.port.out.WorkOrderNotif
 import jakarta.enterprise.context.ApplicationScoped;
 import lombok.extern.slf4j.Slf4j;
 
-/**
-real e-mail provider needed.
- */
 @Slf4j
 @ApplicationScoped
 public class NotificationService implements WorkOrderNotificationPort {

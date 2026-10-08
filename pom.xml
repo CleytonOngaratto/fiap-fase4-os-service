@@ -35,7 +35,6 @@
     </dependencyManagement>
 
     <dependencies>
-        <!-- Core dependencies -->
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-rest</artifactId>
@@ -70,8 +69,6 @@
             <artifactId>quarkus-smallrye-health</artifactId>
         </dependency>
 
-        <!-- Observability (Fase 3, Bloco 4a): logs JSON p/ ingestao no NewRelic +
-             metricas Micrometer/Prometheus que alimentam os dashboards do Bloco 6. -->
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-logging-json</artifactId>
@@ -81,7 +78,6 @@
             <artifactId>quarkus-micrometer-registry-prometheus</artifactId>
         </dependency>
 
-        <!-- Database -->
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-jdbc-postgresql</artifactId>
@@ -99,7 +95,6 @@
             <artifactId>quarkus-hibernate-orm-panache</artifactId>
         </dependency>
 
-        <!-- Security -->
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-security</artifactId>
@@ -118,7 +113,6 @@
             <artifactId>quarkus-elytron-security-jdbc</artifactId>
         </dependency>
 
-        <!-- Utils -->
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
@@ -131,7 +125,6 @@
             <version>${org.mapstruct.version}</version>
         </dependency>
 
-        <!-- Test dependencies -->
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-junit5</artifactId>
@@ -272,11 +265,6 @@
                                         <limit>
                                             <counter>LINE</counter>
                                             <value>COVEREDRATIO</value>
-                                            <!-- Phase 4 gate: LINE >= 0.80, the challenge's minimum coverage per service.
-                                                 Measured on 2026-10-06 with the inherited code: LINE 81.71%,
-                                                 INSTRUCTION 77.19%, BRANCH 72.18% (432 tests). The margin is thin
-                                                 (1.7 pp), and SonarCloud's coverage (lines + conditions) estimates
-                                                 to ~79.6% with these numbers: new code must come with tests. -->
                                             <minimum>0.80</minimum>
                                         </limit>
                                     </limits>

@@ -125,8 +125,7 @@ class VehicleInteractorTest {
 
     @Test
     void update_doesNotChangeOwner_whenRequestCarriesDifferentCustomerId() {
-        // D2 regression: owner is immutable on update — a different customerId in the request is ignored.
-        when(repository.findById(1L)).thenReturn(Optional.of(vehicleDomain)); // existing owner = 1L
+        when(repository.findById(1L)).thenReturn(Optional.of(vehicleDomain));
         when(repository.findByVehiclePlate(any())).thenReturn(Optional.empty());
         when(repository.save(any())).thenReturn(vehicleDomain);
         VehicleRequest withDifferentOwner = new VehicleRequest("ABC-1234", "Toyota", "Corolla", 2020, 2L);

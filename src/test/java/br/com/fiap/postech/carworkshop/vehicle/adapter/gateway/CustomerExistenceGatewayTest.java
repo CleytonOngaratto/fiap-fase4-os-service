@@ -16,10 +16,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-/**
- * V3: the gateway delegates customer existence to the customer module's public port,
- * not its Panache repository. Trivial unit test guards the delegation (and coverage).
- */
 class CustomerExistenceGatewayTest {
 
     @InjectMocks

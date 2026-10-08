@@ -1,29 +1,4 @@
-﻿<#
-.SYNOPSIS
-    Valida cada NRQL de k8s/newrelic/dashboard.json contra a conta e publica o dashboard.
-
-.DESCRIPTION
-    A ordem importa: primeiro VALIDA, depois publica. Um dashboard com query sintaticamente errada
-    ou apontando para métrica que não existe fica verde na UI e vazio no painel — e num projeto de
-    avaliação isso é pior que não ter o painel, porque parece pronto.
-
-    O script separa dois resultados que a UI do New Relic mistura:
-      - query INVÁLIDA  -> erro de NRQL. Bloqueia a publicação.
-      - query SEM DADO  -> sintaxe ok, zero resultados. Só avisa: pode ser janela sem tráfego.
-
-    A user key sai do SSM (`/fase4/newrelic/user-key`), nunca de argumento — valor em linha de
-    comando aparece na process list. Ela é de natureza OPOSTA à license key: lê e administra a conta,
-    então nunca entra no cluster.
-
-.PARAMETER ValidateOnly
-    Só valida, não publica. Use para conferir as queries sem tocar na conta.
-
-.EXAMPLE
-    .\scripts\newrelic-dashboard.ps1 -ValidateOnly
-    .\scripts\newrelic-dashboard.ps1
-#>
-
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$Region = "us-east-1",
     [int]$AccountId = 8439524,
@@ -45,8 +20,7 @@ function Invoke-Probe {
     return $out
 }
 
-# PS 5.1 negocia TLS 1.0 por default, e a api.newrelic.com recusa. Sem isto o erro vem como
-# "A conexão subjacente foi fechada", que parece rede.
+# PS 5.1 negocia TLS 1.0 por default e a api.newrelic.com recusa.
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 $repoRoot = Split-Path $PSScriptRoot -Parent
@@ -72,9 +46,7 @@ Write-Ok "user key lida ($($key.Length) chars, prefixo $($key.Substring(0,5)))"
 function Invoke-NerdGraph {
     param([Parameter(Mandatory)][string]$Query)
     $body = @{ query = $Query } | ConvertTo-Json -Depth 20 -Compress
-    # Body em BYTES UTF-8, nao string: o Invoke-RestMethod do PS 5.1 serializa string como ASCII, e
-    # um acento dentro do NRQL (ex.: AS 'requisicoes') chega corrompido -> JSON invalido -> HTTP 400,
-    # que parece erro de query e nao de encoding. So a query COM acento falha, o que engana mais.
+    # Bytes UTF-8: o Invoke-RestMethod do PS 5.1 serializa string como ASCII e corrompe acentos.
     $bytes = [System.Text.Encoding]::UTF8.GetBytes($body)
     try {
         return Invoke-RestMethod -Method Post -Uri "https://api.newrelic.com/graphql" `
@@ -87,8 +59,7 @@ function Invoke-NerdGraph {
     }
 }
 
-# `Get-Content` sem -Encoding le ANSI no PS 5.1 quando o arquivo nao tem BOM, e os acentos dos
-# titulos chegariam corrompidos ao New Relic. Le explicito em UTF-8.
+# Get-Content sem -Encoding le ANSI no PS 5.1 quando o arquivo nao tem BOM.
 $dashboard = [System.IO.File]::ReadAllText($dashboardPath, [System.Text.UTF8Encoding]::new($false)) | ConvertFrom-Json
 
 $queries = @()
@@ -114,9 +85,6 @@ foreach ($q in $queries) {
     $results = @($res.data.actor.account.nrql.results)
     if ($results.Count -eq 0) { Write-Empty "$($q.Widget) — nenhuma linha"; $empty++; continue }
 
-    # Contar linhas NAO e validar. Uma query pode devolver uma linha com valor 0 e o painel dizer
-    # "0 pods up" com 4 pods rodando — foi o que aconteceu com um WHERE que filtrava pelo VALOR da
-    # metrica, que no New Relic nao e atributo. Aqui se olha o CONTEUDO.
     $numbers = foreach ($row in $results) {
         foreach ($prop in $row.PSObject.Properties) {
             if ($prop.Name -notin @("facet", "beginTimeSeconds", "endTimeSeconds", "timestamp") -and
@@ -124,9 +92,6 @@ foreach ($q in $queries) {
         }
     }
     if ($numbers -and (@($numbers | Where-Object { $_ -ne 0 }).Count -eq 0)) {
-        # Heuristica, nao veredito: zero pode ser o estado SAUDAVEL (painel de erro 5xx sem erro) ou
-        # uma query errada (foi assim que "0 pods up" passou com 4 pods rodando). O script nao sabe
-        # a diferenca, entao avisa e deixa a decisao para quem le — sem bloquear a publicacao.
         Write-Empty "$($q.Widget) — $($results.Count) linha(s), todos os valores ZERO. Confira se e o esperado."
         $empty++
     }
@@ -153,8 +118,6 @@ Write-Head "Publicando"
 $search = Invoke-NerdGraph "{ actor { entitySearch(query: `"name = '$($dashboard.name)' AND type = 'DASHBOARD'`") { results { entities { guid name } } } } }"
 $existing = $search.data.actor.entitySearch.results.entities | Where-Object { $_.name -eq $dashboard.name } | Select-Object -First 1
 
-# O JSON do arquivo e o input da mutation: converter para GraphQL literal evita manter duas
-# representacoes do mesmo dashboard em sincronia manual.
 function ConvertTo-GraphQLLiteral($obj) {
     if ($null -eq $obj) { return "null" }
     if ($obj -is [bool]) { return $obj.ToString().ToLower() }

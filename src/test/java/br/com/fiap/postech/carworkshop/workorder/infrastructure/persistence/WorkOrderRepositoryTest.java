@@ -17,10 +17,6 @@ class WorkOrderRepositoryTest {
     @Inject
     WorkOrderPanacheRepository workOrderRepository;
 
-    // Isolamento: @TestTransaction reverte tudo ao final; o deleteAll() (clean slate — este teste
-    // checa findByStatus(COMPLETED).isEmpty()) roda dentro da transação e é desfeito no rollback,
-    // preservando o seed compartilhado para as outras classes.
-
     @Test
     @TestTransaction
     void testFindByStatus_should_return_work_orders_with_received_status() {

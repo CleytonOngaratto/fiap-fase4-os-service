@@ -1,6 +1,3 @@
-# Config não sensível da app. Nada que venha do contrato /fase4/* entra aqui: esses valores mudam a
-# cada sessão do lab e chegam por Secret gerado no deploy — versioná-los seria hardcodar endpoint
-# entre repos.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -9,18 +6,13 @@ metadata:
   labels:
     app: car-workshop-api
 data:
-  # Sem isto o Quarkus escuta só em localhost.
   QUARKUS_HTTP_HOST: "0.0.0.0"
   QUARKUS_HTTP_ROOT_PATH: /carworkshop/v1
   QUARKUS_FLYWAY_MIGRATE_AT_START: "true"
   QUARKUS_LOG_LEVEL: INFO
 
-  # ⚠️ Não reintroduzir QUARKUS_DATASOURCE_JDBC_URL aqui (era o que este ConfigMap trazia na Fase 2,
-  # apontando para o Postgres in-cluster). Ela sobrescreveria a URL que o application.properties monta
-  # a partir de DB_HOST/DB_PORT/DB_NAME — e levaria junto o ?sslmode=require sem erro nenhum, porque
-  # o pgjdbc negocia TLS sozinho com o default `prefer`. O contrato explícito sumiria calado.
+  # Sem QUARKUS_DATASOURCE_JDBC_URL: ela sobrescreveria a URL montada aqui e o sslmode=require sumiria calado.
   DB_SSLMODE: require
 
-  # O par RSA não está na imagem nem no git. Caminho do volume do Secret car-workshop-jwt.
   JWT_PUBLIC_KEY_LOCATION: file:/deployments/secrets/publicKey.pem
   JWT_PRIVATE_KEY_LOCATION: file:/deployments/secrets/privateKey.pem

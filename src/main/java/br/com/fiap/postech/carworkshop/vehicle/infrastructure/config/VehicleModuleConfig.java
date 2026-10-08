@@ -7,11 +7,6 @@ import br.com.fiap.postech.carworkshop.vehicle.usecase.port.out.VehicleRepositor
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Produces;
 
-/**
- * CDI wiring for the vehicle use case. The framework annotation lives HERE so the
- * {@link VehicleInteractor} stays pure Java (D4/V4): no {@code jakarta.*} in the use case,
- * dependencies injected by constructor. Mirrors the AuthModuleConfig reference pattern.
- */
 @ApplicationScoped
 public class VehicleModuleConfig {
 

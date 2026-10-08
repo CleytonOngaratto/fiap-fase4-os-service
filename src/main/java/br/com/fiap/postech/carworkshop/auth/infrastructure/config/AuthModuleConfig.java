@@ -8,11 +8,6 @@ import br.com.fiap.postech.carworkshop.auth.usecase.port.out.UserRepositoryPort;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Produces;
 
-/**
- * CDI wiring for the auth use case. The framework annotation lives HERE so the
- * {@link AuthInteractor} stays pure Java (D4/V4): no {@code jakarta.*} in the use case,
- * dependencies injected by constructor. Reference pattern for the other modules.
- */
 @ApplicationScoped
 public class AuthModuleConfig {
 

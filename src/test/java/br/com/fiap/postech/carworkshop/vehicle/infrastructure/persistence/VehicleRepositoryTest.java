@@ -13,10 +13,6 @@ class VehicleRepositoryTest {
     @Inject
     VehiclePanacheRepository vehicleRepository;
 
-    // Isolamento: @TestTransaction reverte tudo ao final, então o deleteAll() (clean slate — este
-    // teste usa a placa ABC-1234 do seed e checa listAll().size()) roda dentro da transação e é
-    // desfeito no rollback, preservando o seed compartilhado para as outras classes.
-
     @Test
     @TestTransaction
     void testFindByVehiclePlate_should_return_vehicle_when_plate_exists() {

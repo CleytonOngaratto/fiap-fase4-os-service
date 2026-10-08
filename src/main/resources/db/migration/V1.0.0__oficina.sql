@@ -1,4 +1,3 @@
--- DROP TABLE public.customers;
 CREATE TABLE public.customers
 (
     id       int8 NOT NULL,
@@ -17,7 +16,6 @@ CREATE SEQUENCE public.customers_seq
     NO MINVALUE
     NO MAXVALUE CACHE 1;
 
--- DROP TABLE public.vehicles;
 CREATE TABLE public.vehicles
 (
     id           int8 NOT NULL,
@@ -36,11 +34,9 @@ CREATE SEQUENCE public.vehicles_seq
     NO MINVALUE
     NO MAXVALUE CACHE 1;
 
--- public.vehicles foreign keys
 ALTER TABLE public.vehicles
     ADD CONSTRAINT fk_customer_vehicles FOREIGN KEY (owner_id) REFERENCES public.customers (id);
 
--- DROP TABLE public.auto_service;
 CREATE TABLE public.auto_service
 (
     id          int8 NOT NULL,
@@ -56,7 +52,6 @@ CREATE SEQUENCE public.auto_service_seq
     NO MINVALUE
     NO MAXVALUE CACHE 1;
 
--- DROP TABLE public.work_orders;
 CREATE TABLE public.work_orders
 (
     id                     int8 NOT NULL,
@@ -80,7 +75,6 @@ CREATE SEQUENCE public.work_orders_seq
     NO MINVALUE
     NO MAXVALUE CACHE 1;
 
--- DROP TABLE public.work_order_services;
 CREATE TABLE public.work_order_services
 (
     work_order_id   int8 NOT NULL,
@@ -90,7 +84,6 @@ CREATE TABLE public.work_order_services
     CONSTRAINT fk_auto_service_order_services FOREIGN KEY (auto_service_id) REFERENCES public.auto_service (id)
 );
 
--- DROP TABLE public.parts_and_supply;
 CREATE TABLE public.parts_and_supply
 (
     id           int8 NOT NULL,
@@ -110,7 +103,6 @@ CREATE SEQUENCE public.parts_and_supply_seq
     NO MINVALUE
     NO MAXVALUE CACHE 1;
 
--- DROP TABLE public.users;
 CREATE TABLE public.users
 (
     id       int8 NOT NULL,
@@ -127,7 +119,6 @@ CREATE SEQUENCE public.users_seq
     NO MINVALUE
     NO MAXVALUE CACHE 1;
 
--- Tabela para armazenar as roles dos usuários (relacionamento @ElementCollection)
 CREATE TABLE public.userentity_roles
 (
     userentity_id int8 NOT NULL,
@@ -135,7 +126,6 @@ CREATE TABLE public.userentity_roles
     CONSTRAINT fk_user_roles FOREIGN KEY (userentity_id) REFERENCES public.users (id)
 );
 
--- Join table linking work orders to parts and supplies
 CREATE TABLE public.work_order_parts
 (
     work_order_id        int8 NOT NULL,
@@ -145,7 +135,6 @@ CREATE TABLE public.work_order_parts
     CONSTRAINT fk_parts_work_order FOREIGN KEY (parts_and_supply_id) REFERENCES public.parts_and_supply (id)
 );
 
--- Insert customers table
 INSERT INTO customers (id, name, document, rg, email, number)
 VALUES (1, 'John Silva', '12345678901', 'MG123456789', 'john.silva@email.com', '11987654321');
 INSERT INTO customers (id, name, document, rg, email, number)
@@ -153,7 +142,6 @@ VALUES (2, 'Maria Santos', '98765432100', 'SP987654321', 'maria.santos@email.com
 INSERT INTO customers (id, name, document, rg, email, number)
 VALUES (3, 'Carlos Oliveira', '11122233344', 'RJ111222333', 'carlos.oliveira@email.com', '11765432109');
 
--- Insert vehicles table
 INSERT INTO vehicles (id, vehiclePlate, manufacturer, modelName, modelYear, owner_id)
 VALUES (1, 'ABC-1234', 'Toyota', 'Corolla', 2022, 1);
 INSERT INTO vehicles (id, vehiclePlate, manufacturer, modelName, modelYear, owner_id)
@@ -161,7 +149,6 @@ VALUES (2, 'XYZ-5678', 'Honda', 'Civic', 2021, 2);
 INSERT INTO vehicles (id, vehiclePlate, manufacturer, modelName, modelYear, owner_id)
 VALUES (3, 'DEF9G12', 'Volkswagen', 'Golf', 2023, 1);
 
--- Insert auto_service table
 INSERT INTO public.auto_service (id, description, price)
 VALUES (1, 'Troca de Óleo do Motor', 150.00);
 INSERT INTO public.auto_service (id, description, price)
@@ -204,7 +191,6 @@ VALUES (9, 'S004', 'Bardahl', 'Desengripante', 18.00, 'UNITARY', 20);
 INSERT INTO parts_and_supply (id, code, manufacturer, description, price, type, quantity)
 VALUES (10, 'S005', '3M', 'Silicone spray', 22.00, 'UNITARY', 10);
 
--- Restart sequences
 ALTER SEQUENCE customers_seq RESTART WITH 4;
 ALTER SEQUENCE vehicles_seq RESTART WITH 4;
 ALTER SEQUENCE auto_service_seq RESTART WITH 11;

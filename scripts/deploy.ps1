@@ -1,34 +1,4 @@
-﻿<#
-.SYNOPSIS
-    Deploy da Car Workshop API no EKS.
-
-.DESCRIPTION
-    Lê o contrato /fase4/* do SSM, gera os três Secrets do namespace e aplica k8s/application/.
-
-    Os Secrets são regerados a todo deploy de propósito: a senha do RDS muda a cada recriação da
-    infraestrutura de banco, e um Secret criado "uma vez" faz a app subir e falhar ao conectar com a
-    credencial da sessão anterior.
-
-    Não builda nem publica a imagem, e não publica /fase4/eks/lb-dns no SSM — só imprime o DNS.
-
-.PARAMETER Tag
-    Tag da imagem no ECR. Default: SHA curto do commit (+ "-dirty" se houver mudança não commitada).
-
-    Não use uma tag fixa tipo "latest": se o spec do Deployment não muda, o `kubectl apply` é no-op —
-    nenhum pod é recriado e o `rollout status` devolve "successfully rolled out" na hora, referindo-se
-    ao deploy anterior. O resultado é validar a imagem velha achando que deployou.
-
-.PARAMETER Restart
-    Força `kubectl rollout restart` depois do apply, para quando a imagem foi republicada sob a
-    mesma tag.
-
-.EXAMPLE
-    $tag = git rev-parse --short HEAD
-    docker build -t "${ecr}:${tag}" .
-    docker push "${ecr}:${tag}"
-    .\scripts\deploy.ps1 -Tag $tag
-#>
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$Tag,
     [string]$Region = "us-east-1",
@@ -54,10 +24,7 @@ function Invoke-Kubectl {
     return $out
 }
 
-# No PS 5.1, redirecionar o stderr de um executável nativo embrulha cada linha num ErrorRecord
-# (NativeCommandError) — e com $ErrorActionPreference = 'Stop' isso vira exceção mesmo numa pergunta
-# legítima, como "existe este Deployment?" antes do primeiro deploy. O 'Continue' local mantém o erro
-# não-terminante e o 2>$null o descarta.
+# PS 5.1: stderr de executavel nativo vira NativeCommandError; o 'Continue' local evita derrubar a sondagem.
 function Invoke-Probe {
     param([Parameter(Mandatory)][string]$Exe, [Parameter(Mandatory)][string[]]$ProbeArgs)
     $ErrorActionPreference = "Continue"
@@ -77,7 +44,6 @@ function Get-SsmValue {
                  "--query", "Parameter.Value", "--output", "text", "--region", $Region)
     if ($Secure) { $cliArgs += "--with-decryption" }
 
-    # PEM volta do CLI como array de linhas; o -join reconstrói com LF, que é como o SSM guarda.
     $value = (Invoke-Probe -Exe "aws" -ProbeArgs $cliArgs) -join "`n"
 
     if ([string]::IsNullOrWhiteSpace($value)) {
@@ -87,9 +53,7 @@ function Get-SsmValue {
     return $value
 }
 
-# Base64 montado aqui, e não `kubectl create secret --from-literal`: a senha do RDS usa
-# "*()-_=+[]{}" e a chave privada é multilinha — como argumento nativo no PS 5.1 os dois são
-# manglados, e o sintoma vira "erro de autenticação" ou "PEM inválido". A chave nunca toca o disco.
+# Base64 aqui, e nao --from-literal: no PS 5.1 a senha do RDS e o PEM multilinha sao manglados como argumento.
 function New-SecretYaml {
     param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][hashtable]$Data)
     $lines = @(
@@ -144,7 +108,6 @@ $dbPass = Get-SsmValue "/fase4/rds/password" -Source $repo3 -Secure
 $jwtPrivate = Get-SsmValue "/fase4/jwt/private-key" -Source $boot -Secure
 $jwtPublic  = Get-SsmValue "/fase4/jwt/public-key"  -Source $boot -Secure
 
-# Obrigatório: sem a var a app sobe e concatena a string literal "null" no hash de senha.
 $secretKeyHelp = @"
 $boot.
     Publicar UMA vez (e nunca rotacionar: o valor entra no hash e invalida as senhas de admin
@@ -153,7 +116,6 @@ $boot.
 "@
 $appSecretKey = Get-SsmValue "/fase4/app/secret-key" -Secure -Source $secretKeyHelp
 
-# Opcional: sem a license key o agente não sobe e a app funciona igual.
 $newRelicKey = Get-SsmValue "/fase4/newrelic/license-key" -Secure -Optional
 if (-not $newRelicKey) {
     Write-Alert "/fase4/newrelic/license-key ausente — a app sobe sem o agente (sem APM no New Relic)."
@@ -193,15 +155,11 @@ $image = "${ecrRepo}:${Tag}"
 Write-Step "Imagem"
 Write-Note $image
 
-# A `generation` sobe a cada mudança de spec, então comparar antes/depois diz se o apply mudou
-# alguma coisa. Comparar só a imagem daria falso alarme quando a mudança está em outro campo.
 $generationBefore = Invoke-Probe -Exe "kubectl" -ProbeArgs @(
     "-n", $Namespace, "get", "deploy", $AppName, "-o", "jsonpath={.metadata.generation}")
 
 
-# A ordem importa duas vezes: `kubectl apply -f <dir>` processa em ordem alfabética, e o
-# namespace.yaml viria depois dos objetos que dependem dele; e o ConfigMap precisa existir antes do
-# Deployment que o referencia em envFrom, senão o pod fica em CreateContainerConfigError.
+# Ordem importa: apply -f <dir> e alfabetico, e o ConfigMap precisa existir antes do Deployment.
 Write-Step "Namespace e ConfigMap"
 Invoke-Kubectl @("apply", "-f", (Join-Path $Manifests "namespace.yaml")) | Out-Null
 Invoke-Kubectl @("apply", "-f", (Join-Path $Manifests "configmap.yaml")) | Out-Null
@@ -211,7 +169,7 @@ Write-Note "namespace/$Namespace e configmap/car-workshop-api-config"
 Write-Step "Secrets (regerados do SSM)"
 
 Set-Secret -Name "car-workshop-db" -Data @{
-    DB_HOST     = $dbHost   # /fase4/rds/endpoint é o host puro, sem porta
+    DB_HOST     = $dbHost
     DB_PORT     = $dbPort
     DB_NAME     = $dbName
     DB_USERNAME = $dbUser
@@ -260,7 +218,6 @@ if ($Restart) {
 }
 
 
-# 600s: no primeiro deploy o pull é frio, são 2 réplicas, e a startupProbe sozinha tolera 150s.
 Write-Step "Aguardando o rollout"
 Invoke-Kubectl @("-n", $Namespace, "rollout", "status", "deployment/$AppName", "--timeout=600s")
 

@@ -109,9 +109,6 @@ public class VehicleIntegrationTest {
                 .body("customerId", equalTo(1));
     }
 
-    // D3 — vehicle->owner binding. Orphan creation is rejected and nothing is
-    // persisted. The PLAN anticipated "404/422"; the actual contract is 400 (missing owner ->
-    // ValidationException) and 404 (unknown owner -> EntityNotFoundException) — same invariant.
     @Test
     @Order(6)
     void testCreateVehicle_should_return_400_when_customerId_missing() {

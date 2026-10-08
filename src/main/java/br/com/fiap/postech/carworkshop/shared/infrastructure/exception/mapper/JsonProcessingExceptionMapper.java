@@ -10,14 +10,6 @@ import jakarta.ws.rs.ext.ExceptionMapper;
 import jakarta.ws.rs.ext.Provider;
 import lombok.extern.slf4j.Slf4j;
 
-/**
- * Catches low-level Jackson read failures (e.g. malformed JSON: trailing comma, unbalanced braces)
- * that surface as {@link JsonProcessingException} but are NOT {@code JsonMappingException}. Without
- * this, such requests fell through to the Quarkus default and returned a 400 with an empty body.
- *
- * <p>JAX-RS picks the most specific mapper, so databind/unknown-field errors still go to
- * {@link JsonMappingExceptionMapper}; only pure parse/stream errors land here.</p>
- */
 @Slf4j
 @Provider
 @ApplicationScoped

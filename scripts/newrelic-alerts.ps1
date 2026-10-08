@@ -1,25 +1,4 @@
-﻿<#
-.SYNOPSIS
-    Valida as NRQL de k8s/newrelic/alerts.json e cria/atualiza a política de alertas.
-
-.DESCRIPTION
-    Mesma disciplina do newrelic-dashboard.ps1: valida antes de publicar. Um alerta cuja query não
-    retorna nada nunca dispara, e um alerta que nunca dispara é indistinguível de um sistema
-    saudável — o pior resultado possível num painel de avaliação.
-
-    A validação aqui checa duas coisas diferentes:
-      - a NRQL é válida?              (erro de sintaxe bloqueia a publicação)
-      - ela produz SINAL agora?       (a condição precisa de série viva para avaliar)
-
-.PARAMETER ValidateOnly
-    Só valida, não publica.
-
-.EXAMPLE
-    .\scripts\newrelic-alerts.ps1 -ValidateOnly
-    .\scripts\newrelic-alerts.ps1
-#>
-
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$Region = "us-east-1",
     [int]$AccountId = 8439524,
@@ -62,8 +41,7 @@ Write-Ok "user key lida ($($key.Length) chars)"
 function Invoke-NerdGraph {
     param([Parameter(Mandatory)][string]$Query)
     $body = @{ query = $Query } | ConvertTo-Json -Depth 20 -Compress
-    # Bytes UTF-8: o Invoke-RestMethod do PS 5.1 serializa string como ASCII, e um acento dentro da
-    # NRQL chega corrompido -> HTTP 400, que parece erro de query e e de encoding.
+    # Bytes UTF-8: o Invoke-RestMethod do PS 5.1 serializa string como ASCII e corrompe acentos.
     $bytes = [System.Text.Encoding]::UTF8.GetBytes($body)
     try {
         return Invoke-RestMethod -Method Post -Uri "https://api.newrelic.com/graphql" `
@@ -89,9 +67,6 @@ foreach ($c in $spec.conditions) {
     $results = @($res.data.actor.account.nrql.results)
     if ($results.Count -eq 0) { Write-Empty "$($c.name) — sintaxe ok, mas NENHUMA linha"; continue }
 
-    # Linha retornada nao e sinal. Uma condicao pode devolver {valor: null} quando a serie nao
-    # existe na janela, e condicao sem sinal nao avalia nada — nao distingue saudavel de
-    # nao-reportando. Foi assim que a condicao de latencia passou como OK estando sem sinal.
     $values = @($results[0].PSObject.Properties |
         Where-Object { $_.Name -notin @("beginTimeSeconds", "endTimeSeconds", "timestamp", "facet") } |
         ForEach-Object { $_.Value })
@@ -116,7 +91,6 @@ else {
     Write-Ok "politica criada (id $($policy.id))"
 }
 
-# Condições já existentes na política, para atualizar em vez de duplicar a cada execução.
 $existing = @{}
 $res = Invoke-NerdGraph "{ actor { account(id: $AccountId) { alerts { nrqlConditionsSearch(searchCriteria: {policyId: `"$($policy.id)`"}) { nrqlConditions { id name } } } } } }"
 foreach ($c in $res.data.actor.account.alerts.nrqlConditionsSearch.nrqlConditions) { $existing[$c.name] = $c.id }
@@ -169,9 +143,6 @@ foreach ($c in $spec.conditions) {
 
 Write-Head "Notificacao"
 
-# O e-mail nao entra no git: os 4 repositorios sao PUBLICOS (exigencia do branch ruleset em conta
-# free), e endereco pessoal em repo publico vira alvo de scraper. Fica no SSM, como o resto do
-# contrato; o parametro existe para sobrepor sem tocar nele.
 if (-not $NotificationEmail) {
     $NotificationEmail = ((Invoke-Probe -Exe "aws" -ProbeArgs @(
                 "ssm", "get-parameter", "--name", "/fase4/newrelic/alert-email",
@@ -183,8 +154,6 @@ if (-not $NotificationEmail) {
     Write-Host "         Use -NotificationEmail ou publique em /fase4/newrelic/alert-email." -ForegroundColor DarkGray
 }
 else {
-    # Tres objetos encadeados, nesta ordem: Destination (para onde) -> Channel (o que se envia) ->
-    # Workflow (o que dispara). Criar so a destination nao notifica nada, e e o engano comum aqui.
     $name = $spec.policyName
 
     $q = "{ actor { account(id: $AccountId) { aiNotifications { destinations(filters: {name: `"$name`"}) { entities { id } } } } } }"
@@ -228,6 +197,4 @@ else {
 }
 
 Write-Host ""
-# O deep link /alerts-ai/policies/<id> nao existe mais: devolve 404 de nerdlet. A navegacao por
-# menu e estavel, o formato de URL da UI nao.
 Write-Host "  Politica: $($spec.policyName) (id $($policy.id)) — abra em Alerts -> Alert Policies" -ForegroundColor Cyan

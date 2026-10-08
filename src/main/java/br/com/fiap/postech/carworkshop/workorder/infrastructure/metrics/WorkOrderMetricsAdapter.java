@@ -31,8 +31,6 @@ public class WorkOrderMetricsAdapter implements WorkOrderMetricsPort {
 
     @Override
     public void recordCompletion(Duration serviceDuration) {
-        // Clock skew ou endDate editada à mão geram span negativo, que o Micrometer registra
-        // sem reclamar e distorce a média.
         if (serviceDuration == null || serviceDuration.isNegative()) {
             return;
         }

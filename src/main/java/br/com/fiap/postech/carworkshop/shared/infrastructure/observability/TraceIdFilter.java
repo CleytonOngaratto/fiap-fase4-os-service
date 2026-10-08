@@ -17,8 +17,6 @@ public class TraceIdFilter implements ContainerRequestFilter, ContainerResponseF
 
     @Override
     public void filter(ContainerRequestContext requestContext) {
-        // Reaproveitar o id de entrada é o que mantém a correlação ponta a ponta: o API Gateway e a
-        // Lambda ficam na frente da app, e gerar um novo aqui recomeçaria a trilha na borda.
         String inbound = requestContext.getHeaderString(TRACE_ID_HEADER);
         String traceId = (inbound == null || inbound.isBlank())
                 ? UUID.randomUUID().toString()
@@ -33,8 +31,6 @@ public class TraceIdFilter implements ContainerRequestFilter, ContainerResponseF
         if (traceId != null) {
             responseContext.getHeaders().putSingle(TRACE_ID_HEADER, traceId);
         }
-        // Threads são reusadas do pool: um MDC residual carimbaria a PRÓXIMA requisição com este
-        // traceId. Limpa sempre, inclusive quando esta requisição não chegou a definir um.
         MDC.remove(MDC_KEY);
     }
 }

@@ -6,11 +6,6 @@ import br.com.fiap.postech.carworkshop.inventory.usecase.port.out.InventoryRepos
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Produces;
 
-/**
- * CDI wiring for the inventory use case. The framework annotation lives HERE so the
- * {@link InventoryInteractor} stays pure Java (D4/V4): no {@code jakarta.*} in the use case,
- * dependencies injected by constructor. Mirrors the AuthModuleConfig reference pattern.
- */
 @ApplicationScoped
 public class InventoryModuleConfig {
 
