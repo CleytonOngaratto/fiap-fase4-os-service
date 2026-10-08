@@ -1,0 +1,71 @@
+# Stack de dev local: app (Quarkus) + Postgres.
+# `version:` foi removido (obsoleto no Compose v2).
+# SonarQube fica num profile separado: NÃO sobe no fluxo padrão do avaliador.
+#
+# Uso:
+#   docker compose up --build           → sobe banco + app
+#   docker compose --profile sonar up   → inclui o SonarQube
+#   Variáveis opcionais em .env (ver .env.example), ex.: DB_PORT_HOST.
+
+services:
+  oficina_app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: car-workshop-api:local
+    container_name: oficina_app
+    ports:
+      - "8080:8080"
+    environment:
+      DB_HOST: oficina_db
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB:-oficina_db}
+      DB_USERNAME: ${POSTGRES_USER:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      DB_SSLMODE: disable
+      SECRET_KEY: ${SECRET_KEY:-oficina-secret-key-dev}
+      # No EKS o mesmo caminho e servido por um Secret do k8s montado como volume.
+      JWT_PUBLIC_KEY_LOCATION: file:/deployments/secrets/publicKey.pem
+      JWT_PRIVATE_KEY_LOCATION: file:/deployments/secrets/privateKey.pem
+      # Sem valor: repassa do ambiente e OMITE se não existir. `${VAR:-}` mandaria string vazia,
+      # que o agente trata diferente de ausente.
+      NEW_RELIC_LICENSE_KEY:
+      # Entidade separada: tráfego de dev não polui o APM que os dashboards consultam.
+      NEW_RELIC_APP_NAME: ${NEW_RELIC_APP_NAME:-car-workshop-api-local}
+    volumes:
+      - ./secrets:/deployments/secrets:ro
+    depends_on:
+      oficina_db:
+        condition: service_healthy
+
+  oficina_db:
+    image: postgres:16
+    container_name: oficina_db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-oficina_db}
+    ports:
+      - "${DB_PORT_HOST:-5433}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-oficina_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  sonarqube:
+    image: sonarqube:10.4.1-community
+    container_name: oficina_sonar
+    profiles: ["sonar"]
+    ports:
+      - "9000:9000"
+    environment:
+      - SONAR_FORCEAUTHENTICATION=false
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+
+volumes:
+  postgres_data:
+  sonarqube_data:

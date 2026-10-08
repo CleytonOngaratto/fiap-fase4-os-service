@@ -1,0 +1,21 @@
+# Sem annotation nenhuma o cloud controller do EKS provisiona um Classic LB — a forma provada no
+# smoke test de rede deste cluster. `port: 80` porque o DNS deste LB é o que o API Gateway usa no /{proxy+}:
+# a URL precisa responder sem porta explícita.
+#
+# ⚠️ Antes de `terraform destroy` no repo 2: apague este Service. O ELB deixa uma ENI na subnet e
+# trava a destruição da VPC.
+apiVersion: v1
+kind: Service
+metadata:
+  name: car-workshop-api
+  namespace: car-workshop
+  labels:
+    app: car-workshop-api
+spec:
+  type: LoadBalancer
+  selector:
+    app: car-workshop-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080

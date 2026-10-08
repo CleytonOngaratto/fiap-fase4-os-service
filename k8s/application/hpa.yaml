@@ -1,0 +1,36 @@
+# Requer o metrics-server, que no EKS vem como addon do cluster (repo 2) — sem ele as métricas ficam
+# <unknown> e não escala.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: car-workshop-api
+  namespace: car-workshop
+  labels:
+    app: car-workshop-api
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: car-workshop-api
+  minReplicas: 2
+  # Teto por bin-packing, não por escolha: o newrelic-prometheus-agent pede 160Mi e caiu no nó leve,
+  # que passou a comportar 2 réplicas de 896Mi em vez de 3. Recalcule com install-newrelic-k8s.ps1.
+  maxReplicas: 4
+  metrics:
+    # A CPU é a métrica do demo — é ela que o gerador de carga move.
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60
+    # Memória entra só para cumprir a redação do edital ("CPU/memória").
+    # ⚠️ A JVM não devolve heap ao SO: se as réplicas ficarem fixas no alto, o culpado é o
+    # requests.memory do deployment estar apertado demais — foi o que aconteceu com os 384Mi da
+    # Fase 2 depois que o agente New Relic entrou na imagem.
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
