@@ -1,0 +1,91 @@
+# image: __IMAGE__ é trocado no deploy; aplicado cru, o pod entra em ImagePullBackOff.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: car-workshop-api
+  namespace: car-workshop
+  labels:
+    app: car-workshop-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: car-workshop-api
+  template:
+    metadata:
+      labels:
+        app: car-workshop-api
+      # newrelic.io/scrape: o job default do agente ignora em silêncio quem não está na allowlist dele.
+      annotations:
+        newrelic.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/carworkshop/v1/q/metrics"
+    spec:
+      # fsGroup: o volume do Secret nasce root:root e, sem ele, o uid 1001 não lê os PEMs.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+      containers:
+        - name: car-workshop-api
+          image: __IMAGE__
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: car-workshop-api-config
+            - secretRef:
+                name: car-workshop-db
+            - secretRef:
+                name: car-workshop-app
+          # Chave RSA por volume, não env var: em env ela aparece no kubectl describe e no agente New Relic.
+          volumeMounts:
+            - name: jwt-keys
+              mountPath: /deployments/secrets
+              readOnly: true
+          startupProbe:
+            httpGet:
+              path: /carworkshop/v1/q/health/live
+              port: 8080
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 30
+          # /live e não /ready: o ready checa o banco, e um blip do RDS reiniciaria todos os pods.
+          livenessProbe:
+            httpGet:
+              path: /carworkshop/v1/q/health/live
+              port: 8080
+            initialDelaySeconds: 0
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /carworkshop/v1/q/health/ready
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 12
+          resources:
+            requests:
+              # Obrigatório: o HPA calcula o % sobre o request de CPU.
+              cpu: 200m
+              # 896Mi pela aritmética do HPA: com menos, o scale-down trava acima de target × (n−1)/n.
+              memory: 896Mi
+            limits:
+              cpu: 500m
+              # Igual ao request; é o teto do heap da JVM (MaxRAMPercentage 25%).
+              memory: 896Mi
+      volumes:
+        - name: jwt-keys
+          secret:
+            secretName: car-workshop-jwt
+            defaultMode: 0440

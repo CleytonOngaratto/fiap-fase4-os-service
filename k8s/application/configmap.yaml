@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: car-workshop-api-config
+  namespace: car-workshop
+  labels:
+    app: car-workshop-api
+data:
+  QUARKUS_HTTP_HOST: "0.0.0.0"
+  QUARKUS_HTTP_ROOT_PATH: /carworkshop/v1
+  QUARKUS_FLYWAY_MIGRATE_AT_START: "true"
+  QUARKUS_LOG_LEVEL: INFO
+
+  # Sem QUARKUS_DATASOURCE_JDBC_URL: ela sobrescreveria a URL montada aqui e o sslmode=require sumiria calado.
+  DB_SSLMODE: require
+
+  JWT_PUBLIC_KEY_LOCATION: file:/deployments/secrets/publicKey.pem
+  JWT_PRIVATE_KEY_LOCATION: file:/deployments/secrets/privateKey.pem

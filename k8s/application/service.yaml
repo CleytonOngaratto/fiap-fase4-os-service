@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: car-workshop-api
+  namespace: car-workshop
+  labels:
+    app: car-workshop-api
+spec:
+  type: LoadBalancer
+  selector:
+    app: car-workshop-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
