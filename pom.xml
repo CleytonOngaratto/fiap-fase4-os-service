@@ -20,6 +20,12 @@
         <lombok.version>1.18.30</lombok.version>
         <lombok-mapstruct-binding.version>0.2.0</lombok-mapstruct-binding.version>
         <archunit.version>1.3.0</archunit.version>
+
+        <sonar-maven-plugin.version>5.8.0.7211</sonar-maven-plugin.version>
+        <sonar.host.url>https://sonarcloud.io</sonar.host.url>
+        <sonar.organization>cleytonongaratto</sonar.organization>
+        <sonar.projectKey>CleytonOngaratto_fiap-fase4-os-service</sonar.projectKey>
+        <sonar.coverage.exclusions>**/*MapperImpl.java,**/repositories/*.java,**/config/Constants.java</sonar.coverage.exclusions>
     </properties>
 
     <dependencyManagement>
@@ -160,6 +166,15 @@
 
     <build>
         <finalName>auto-repair</finalName>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.sonarsource.scanner.maven</groupId>
+                    <artifactId>sonar-maven-plugin</artifactId>
+                    <version>${sonar-maven-plugin.version}</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
         <plugins>
             <plugin>
                 <groupId>${quarkus.platform.group-id}</groupId>
