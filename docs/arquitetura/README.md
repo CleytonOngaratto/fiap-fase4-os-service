@@ -21,11 +21,12 @@ Os documentos nascem junto com o código, um bloco por vez; os que ainda não ex
 | [adr/ADR-001-saga-orquestrada.md](adr/ADR-001-saga-orquestrada.md) | Por que Saga **orquestrada**, com o orquestrador em código no OS Service — e por que não Step Functions nem coreografia |
 | [adr/ADR-002-credencial-dos-pods.md](adr/ADR-002-credencial-dos-pods.md) | Como os pods obtêm credencial AWS sem nenhum segredo (`LabRole` no node group + IMDSv2 com *hop limit* 2), por que IRSA e Pod Identity ficaram de fora no AWS Academy e o custo disso em isolamento |
 | [adr/ADR-003-borda-privada.md](adr/ADR-003-borda-privada.md) | Como o tráfego entra sem nenhum load balancer público (API Gateway → VPC Link → ALB interno → pods), quem é dono de cada peça e por que a allowlist de rotas do Gateway não basta sozinha |
+| [adr/ADR-004-gateway-persistente.md](adr/ADR-004-gateway-persistente.md) | Por que o API Gateway vive fora do ciclo de sessão (URL estável para o webhook do Mercado Pago), como os roots `persistent/` e `session/` dividem a borda e o que um *Reset* do laboratório apaga |
 | `componentes.md` | *a escrever (B3)* — diagrama geral: serviços, bancos, mensageria, API Gateway, Mercado Pago e New Relic |
 | `sequencia.md` | *a escrever (B7)* — sequência da Saga: caminho feliz e compensação |
 | `banco-de-dados.md` | *a escrever (B4–B6)* — Postgres do OS e do Billing, DynamoDB do Execution, outbox e inbox |
 | `lab-vs-producao.md` | *a escrever (B9)* — o que mudaria fora do AWS Academy, decisão por decisão |
-| ADRs restantes | *a escrever, cada um no bloco que implementa a decisão* — divisão em serviços, mensageria e API Gateway persistente (B3), Lambda × banco do OS (B4), bancos SQL + NoSQL (B4–B6) |
+| ADRs restantes | *a escrever, cada um no bloco que implementa a decisão* — divisão em serviços e mensageria (B3), Lambda × banco do OS (B4), bancos SQL + NoSQL (B4–B6) |
 
 ## Onde está cada tema pedido no Tech Challenge
 
