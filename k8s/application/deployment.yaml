@@ -3,7 +3,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: car-workshop-api
-  namespace: car-workshop
+  namespace: os
   labels:
     app: car-workshop-api
 spec:
@@ -21,6 +21,8 @@ spec:
         prometheus.io/port: "8080"
         prometheus.io/path: "/carworkshop/v1/q/metrics"
     spec:
+      serviceAccountName: car-workshop-api
+      terminationGracePeriodSeconds: 60
       # fsGroup: o volume do Secret nasce root:root e, sem ele, o uid 1001 não lê os PEMs.
       securityContext:
         runAsNonRoot: true
@@ -38,6 +40,11 @@ spec:
           ports:
             - name: http
               containerPort: 8080
+          # O ALB segue mandando requisição por alguns segundos ao alvo que entrou em drenagem; sem a pausa, o rollout dá 5xx.
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "35"]
           envFrom:
             - configMapRef:
                 name: car-workshop-api-config

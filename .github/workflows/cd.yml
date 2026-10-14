@@ -1,20 +1,25 @@
 name: CD - Build, Push to ECR and Deploy to EKS
 
 on:
+  push:
+    branches: [ "main" ]
+    paths-ignore: [ "**.md", "docs/**", "terraform/**" ]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: cd-eks
+  group: cd-os
   cancel-in-progress: false
 
 env:
   AWS_REGION: us-east-1
-  NAMESPACE: car-workshop
+  SERVICE: os
+  NAMESPACE: os
   APP_NAME: car-workshop-api
-  KUBECTL_VERSION: v1.32.2
+  MANIFESTS: k8s/application
+  KUBECTL_VERSION: v1.35.9
 
 jobs:
   # Gate de verdade: workflows não dependem entre si, e sem este job um teste quebrado chegaria ao cluster.
@@ -59,38 +64,76 @@ jobs:
         if: failure()
         run: |
           echo "::error::Credencial do AWS Academy expirou ou esta invalida (a sessao dura ~4h)."
-          echo "::error::Abra o lab, atualize ~/.aws/credentials e rode, no repo de infra:"
+          echo "::error::Abra o lab, atualize ~/.aws/credentials e rode, no repo de plataforma:"
           echo "::error::  fiap-fase4-infra-k8s/scripts/refresh-gh-secrets.ps1 -Org CleytonOngaratto"
           echo "::error::O AWS_SESSION_TOKEN e obrigatorio; sem ele o erro vem como InvalidClientTokenId."
 
       - name: Check lab session
         run: aws sts get-caller-identity
 
-      - name: Read contract from SSM
+      - name: Read platform contract from SSM
         run: |
           set -euo pipefail
-          repo2="repo 2 (fiap-fase4-infra-k8s) - rode o terraform apply la primeiro"
+          platform="fiap-fase4-infra-k8s - aplique a plataforma primeiro"
 
           read_param() {
-            local name="$1"
-            if ! aws ssm get-parameter --name "$name" --query Parameter.Value --output text \
-                 --region "$AWS_REGION" 2>/dev/null | tr -d '\r'; then
-              echo "::error::SSM: parametro '$name' ausente. Quem publica: $repo2" >&2
+            local value
+            if ! value=$(aws ssm get-parameter --name "$1" --query Parameter.Value --output text 2>/dev/null); then
+              echo "::error::SSM: parametro '$1' ausente. Quem publica: $platform" >&2
               return 1
             fi
+            printf '%s' "$value"
           }
 
-          ecr=$(read_param /fase4/ecr/repo-url)
+          ecr=$(read_param "/fase4/ecr/$SERVICE/repo-url")
           cluster=$(read_param /fase4/eks/cluster-name)
+          alb_sg=$(read_param /fase4/alb/sg-id)
 
           {
             echo "ECR_REPO=$ecr"
             echo "CLUSTER_NAME=$cluster"
+            echo "ALB_SG_ID=$alb_sg"
             echo "IMAGE=${ecr}:${GITHUB_SHA}"
           } >> "$GITHUB_ENV"
 
           echo "ECR     : $ecr"
           echo "cluster : $cluster"
+
+      # Num merge com código e terraform/ os dois workflows rodam juntos, e o RDS leva ~10 min até publicar.
+      - name: Wait for the service contract (SSM)
+        run: |
+          set -euo pipefail
+          params=(
+            "/fase4/$SERVICE/alb/target-group-arn"
+            "/fase4/$SERVICE/rds/endpoint"
+            "/fase4/$SERVICE/rds/port"
+            "/fase4/$SERVICE/rds/db-name"
+            "/fase4/$SERVICE/rds/username"
+            "/fase4/$SERVICE/rds/password"
+          )
+          deadline=$((SECONDS + 1500))
+
+          while :; do
+            missing=()
+            for p in "${params[@]}"; do
+              aws ssm get-parameter --name "$p" > /dev/null 2>&1 || missing+=("$p")
+            done
+            if [ "${#missing[@]}" -eq 0 ]; then
+              break
+            fi
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              for p in "${missing[@]}"; do
+                echo "::error::SSM: parametro '$p' ausente depois de 25 min. Quem publica: o terraform.yml deste repositorio (terraform/)."
+              done
+              exit 1
+            fi
+            echo "aguardando: ${missing[*]}"
+            sleep 20
+          done
+
+          tg=$(aws ssm get-parameter --name "/fase4/$SERVICE/alb/target-group-arn" --query Parameter.Value --output text)
+          echo "TARGET_GROUP_ARN=$tg" >> "$GITHUB_ENV"
+          echo "target group: $tg"
 
       - name: Log in to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
@@ -114,11 +157,12 @@ jobs:
           kubectl config current-context
 
       # Ordem importa: apply -f <dir> é alfabético, e o ConfigMap precisa existir antes do Deployment.
-      - name: Apply Namespace and ConfigMap
+      - name: Apply Namespace, ServiceAccount and ConfigMap
         run: |
           set -euo pipefail
-          kubectl apply -f k8s/application/namespace.yaml
-          kubectl apply -f k8s/application/configmap.yaml
+          kubectl apply -f "$MANIFESTS/namespace.yaml"
+          kubectl apply -f "$MANIFESTS/serviceaccount.yaml"
+          kubectl apply -f "$MANIFESTS/configmap.yaml"
 
       # Um único step: o GITHUB_ENV de um step fica legível pelos seguintes.
       # Regenerados a todo deploy: a senha do RDS muda a cada apply.
@@ -126,7 +170,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          repo3="repo 3 (fiap-fase4-infra-db) - os parametros so saem quando a instancia fica available"
+          own="o terraform.yml deste repositorio (terraform/)"
           boot="bootstrap manual do dono; sobrevive ao destroy, nenhum Terraform o cria"
           boot_key="$boot. Publicar UMA vez e NUNCA rotacionar: o valor entra no hash da senha do admin"
 
@@ -135,7 +179,7 @@ jobs:
             shift 2
             local value
             if ! value=$(aws ssm get-parameter --name "$name" --query Parameter.Value \
-                         --output text --region "$AWS_REGION" "$@" 2>/dev/null | tr -d '\r'); then
+                         --output text "$@" 2>/dev/null); then
               echo "::error::SSM: parametro '$name' ausente ou ilegivel. Quem publica: $source" >&2
               return 1
             fi
@@ -144,11 +188,11 @@ jobs:
 
           mask() { if [ -n "${1:-}" ]; then echo "::add-mask::$1"; fi; }
 
-          db_host=$(ssm /fase4/rds/endpoint "$repo3")
-          db_port=$(ssm /fase4/rds/port     "$repo3")
-          db_name=$(ssm /fase4/rds/db-name  "$repo3")
-          db_user=$(ssm /fase4/rds/username "$repo3")
-          db_pass=$(ssm /fase4/rds/password "$repo3" --with-decryption); mask "$db_pass"
+          db_host=$(ssm "/fase4/$SERVICE/rds/endpoint" "$own")
+          db_port=$(ssm "/fase4/$SERVICE/rds/port"     "$own")
+          db_name=$(ssm "/fase4/$SERVICE/rds/db-name"  "$own")
+          db_user=$(ssm "/fase4/$SERVICE/rds/username" "$own")
+          db_pass=$(ssm "/fase4/$SERVICE/rds/password" "$own" --with-decryption); mask "$db_pass"
 
           jwt_private=$(ssm /fase4/jwt/private-key "$boot" --with-decryption)
           jwt_public=$(ssm /fase4/jwt/public-key   "$boot" --with-decryption)
@@ -156,7 +200,7 @@ jobs:
           app_key=$(ssm /fase4/app/secret-key "$boot_key" --with-decryption); mask "$app_key"
 
           nr_key=$(aws ssm get-parameter --name /fase4/newrelic/license-key --with-decryption \
-                   --query Parameter.Value --output text --region "$AWS_REGION" 2>/dev/null | tr -d '\r' || true)
+                   --query Parameter.Value --output text 2>/dev/null || true)
           mask "$nr_key"
 
           # ::add-mask:: não mascara valor multilinha: mascara-se o base64.
@@ -203,22 +247,34 @@ jobs:
             "privateKey.pem: $b64_jwt_private" \
             "publicKey.pem: $b64_jwt_public"
 
-      - name: Apply Deployment, Service and HPA
+      # Antes do Deployment: o controller só injeta o readiness gate em pod criado depois do binding.
+      - name: Apply Service and TargetGroupBinding
+        run: |
+          set -euo pipefail
+          kubectl apply -f "$MANIFESTS/service.yaml"
+
+          for placeholder in __TARGET_GROUP_ARN__ __ALB_SG_ID__; do
+            if ! grep -q "$placeholder" "$MANIFESTS/targetgroupbinding.yaml"; then
+              echo "::error::targetgroupbinding.yaml sem o placeholder $placeholder - alguem hardcodou o valor?"
+              exit 1
+            fi
+          done
+          sed -e "s|__TARGET_GROUP_ARN__|${TARGET_GROUP_ARN}|" -e "s|__ALB_SG_ID__|${ALB_SG_ID}|" \
+            "$MANIFESTS/targetgroupbinding.yaml" | kubectl apply -f -
+
+      - name: Apply Deployment and HPA
         run: |
           set -euo pipefail
 
           before=$(kubectl -n "$NAMESPACE" get deploy "$APP_NAME" \
                    -o jsonpath='{.metadata.generation}' 2>/dev/null || true)
 
-          if ! grep -q '__IMAGE__' k8s/application/deployment.yaml; then
+          if ! grep -q '__IMAGE__' "$MANIFESTS/deployment.yaml"; then
             echo "::error::deployment.yaml sem o placeholder __IMAGE__ - alguem hardcodou a URL do ECR?"
             exit 1
           fi
-          sed "s|__IMAGE__|${IMAGE}|" k8s/application/deployment.yaml | kubectl apply -f -
-
-          # Arquivo a arquivo: o diretório aplicaria o deployment.yaml cru, com __IMAGE__.
-          kubectl apply -f k8s/application/service.yaml
-          kubectl apply -f k8s/application/hpa.yaml
+          sed "s|__IMAGE__|${IMAGE}|" "$MANIFESTS/deployment.yaml" | kubectl apply -f -
+          kubectl apply -f "$MANIFESTS/hpa.yaml"
 
           after=$(kubectl -n "$NAMESPACE" get deploy "$APP_NAME" -o jsonpath='{.metadata.generation}')
 
@@ -230,45 +286,42 @@ jobs:
       - name: Wait for rollout
         run: kubectl -n "$NAMESPACE" rollout status "deployment/$APP_NAME" --timeout=600s
 
-      - name: Publish /fase4/eks/lb-dns
+      - name: Smoke test - target group health
         run: |
           set -euo pipefail
+          want=$(kubectl -n "$NAMESPACE" get deploy "$APP_NAME" -o jsonpath='{.spec.replicas}')
 
-          lb=""
           for _ in $(seq 1 30); do
-            lb=$(kubectl -n "$NAMESPACE" get svc "$APP_NAME" \
-                 -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
-            if [ -n "$lb" ]; then break; fi
+            healthy=$(aws elbv2 describe-target-health --target-group-arn "$TARGET_GROUP_ARN" \
+                      --query "length(TargetHealthDescriptions[?TargetHealth.State=='healthy'])" --output text)
+            total=$(aws elbv2 describe-target-health --target-group-arn "$TARGET_GROUP_ARN" \
+                    --query "length(TargetHealthDescriptions)" --output text)
+            echo "alvos healthy: $healthy de $total (replicas: $want)"
+            if [ "$healthy" -ge "$want" ] && [ "$healthy" -eq "$total" ]; then
+              exit 0
+            fi
             sleep 10
           done
 
-          if [ -z "$lb" ]; then
-            echo "::error::O ELB nao reportou hostname em 5 min."
-            echo "::error::kubectl -n $NAMESPACE describe svc $APP_NAME mostra o evento (procure AccessDenied)."
-            exit 1
-          fi
+          aws elbv2 describe-target-health --target-group-arn "$TARGET_GROUP_ARN" --output table
+          echo "::error::Os alvos do target group nao ficaram todos healthy em 5 min."
+          exit 1
 
-          echo "LB_DNS=$lb" >> "$GITHUB_ENV"
-
-          aws ssm put-parameter --name /fase4/eks/lb-dns --type String --overwrite \
-            --value "$lb" \
-            --description "DNS do LoadBalancer da app (repo 4). Hostname puro: o consumidor monta a URL." \
-            --region "$AWS_REGION" > /dev/null
-
-          aws ssm add-tags-to-resource --resource-type Parameter --resource-id /fase4/eks/lb-dns \
-            --tags Key=Project,Value=fiap-fase4 Key=ManagedBy,Value=github-actions Key=Repo,Value=fiap-fase4-os-service \
-            --region "$AWS_REGION" > /dev/null \
-            || echo "::warning::Nao consegui taguear /fase4/eks/lb-dns (o parametro esta publicado; a tag e cosmetica)."
-
-          echo "/fase4/eks/lb-dns = $lb"
-
-      # --retry-all-errors: sem ele o curl desiste na falha de DNS dos primeiros minutos de um ELB novo.
-      - name: Smoke test /q/health/ready
+      - name: Smoke test - API Gateway
         run: |
           set -euo pipefail
-          curl -fsS --retry 30 --retry-delay 10 --retry-all-errors --connect-timeout 10 \
-            "http://${LB_DNS}/carworkshop/v1/q/health/ready"
-          echo
+          if ! api=$(aws ssm get-parameter --name /fase4/apigw/url --query Parameter.Value --output text 2>/dev/null); then
+            echo "::notice::/fase4/apigw/url ausente (persistent/ do auth nao aplicado): smoke pelo Gateway pulado."
+            exit 0
+          fi
+
+          path="/carworkshop/v1/tracking/1"
+          code=$(curl -s -o /dev/null -m 15 -w '%{http_code}' "$api$path" || true)
+          case "$code" in
+            401) echo "GET $path sem token pelo Gateway -> 401" ;;
+            404) echo "::notice::GET $path -> 404 no Gateway: a rota ainda nao existe (session/ do auth nao aplicado)." ;;
+            *)   echo "::error::GET $path sem token pelo Gateway -> $code (esperado 401)"; exit 1 ;;
+          esac
 
       - name: Deployment summary
         if: success()
@@ -280,10 +333,9 @@ jobs:
             echo "|---|---|"
             echo "| Imagem | \`$IMAGE\` |"
             echo "| Cluster | \`$CLUSTER_NAME\` |"
-            echo "| LoadBalancer | \`$LB_DNS\` |"
-            echo "| Health | http://$LB_DNS/carworkshop/v1/q/health/ready |"
+            echo "| Namespace | \`$NAMESPACE\` |"
             echo ""
             echo '```'
-            kubectl -n "$NAMESPACE" get pods,svc,hpa
+            kubectl -n "$NAMESPACE" get pods,svc,hpa,targetgroupbindings
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

@@ -1,6 +1,7 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: car-workshop
+  name: os
   labels:
     app.kubernetes.io/part-of: car-workshop
+    elbv2.k8s.aws/pod-readiness-gate-inject: enabled
