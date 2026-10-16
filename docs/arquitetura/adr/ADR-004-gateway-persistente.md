@@ -1,7 +1,7 @@
 # ADR — API Gateway persistente: a URL pública não muda entre sessões
 
 > Escrito em 2026-10-12, com as medições feitas no AWS Academy em 2026-10-01 e a leitura da documentação do Mercado
-> Pago de 2026-09-29.
+> Pago de 2026-09-29; confirmado na primeira sessão com os três serviços, em 2026-10-14.
 
 - **Status:** Aceita (2026-10-01)
 - **Decisores:** dono do projeto, com análise e medições do agente
@@ -84,3 +84,7 @@ e as rotas versionados no pipeline de cada ambiente.
 | 2026-09-29 | Documentação do Mercado Pago (Checkout Pro › notificações e Webhooks): a URL da cobrança tem prioridade sobre a do painel; a assinatura `x-signature` usa uma chave secreta exclusiva da aplicação; a documentação não diz se as notificações enviadas ao `notification_url` também vêm assinadas |
 | 2026-10-01 | Gateway → VPC Link → ALB interno → pod: **HTTP 200** pela internet; rota não declarada → **404 no próprio Gateway** (ver [ADR-003](ADR-003-borda-privada.md)) |
 | 2026-10-12 | [`persistent/apigateway.tf`](https://github.com/CleytonOngaratto/fiap-fase4-auth-serverless/blob/main/persistent/apigateway.tf) (HTTP API com `prevent_destroy`), [`session/locals.tf`](https://github.com/CleytonOngaratto/fiap-fase4-auth-serverless/blob/main/session/locals.tf) (allowlist de rotas) e [`destroy-all.ps1`](https://github.com/CleytonOngaratto/fiap-fase4-infra-k8s/blob/main/scripts/destroy-all.ps1) (teardown sem o `persistent/`): `terraform fmt`/`validate` sem erro nos dois roots |
+| 2026-10-14 | `persistent/` aplicado uma vez, por `workflow_dispatch`; `session/` aplicado pelo merge na `main` (VPC Link + 12 rotas). Pelo Gateway, da internet: `GET /billing/v1/info` e `GET /execution/v1/info` → **200**; rota protegida do OS sem token → **401** com o corpo de erro do Quarkus (o Gateway não tem autorizador); `/q/*` → **404 no próprio Gateway**; `/auth/signup` e `/tracking/{id}/approve` → **404 no Gateway**; caminho com maiúscula → **404** |
+| 2026-10-14 | No HTTP API, `{proxy+}` **não casa o caminho-base**: `GET /carworkshop/v1/customers` → 404 no Gateway, enquanto `/customers/get-all` chega ao Quarkus — por isso a rota-base explícita onde há endpoint na raiz do recurso ([`session/locals.tf`](https://github.com/CleytonOngaratto/fiap-fase4-auth-serverless/blob/main/session/locals.tf)) |
+| 2026-10-14 | Logo depois de o VPC Link ficar `AVAILABLE`, o Gateway respondeu **503 por ~1–2 min** e depois normalizou: o smoke do `session/` tem retentativa por isso |
+| 2026-10-14 | Teardown da sessão com o [`destroy-all.ps1`](https://github.com/CleytonOngaratto/fiap-fase4-infra-k8s/blob/main/scripts/destroy-all.ps1): o `session/` saiu primeiro e o `persistent/` ficou intocado; a auditoria listou o HTTP API e o log group como **persistentes por desenho** e todas as outras categorias vazias |
