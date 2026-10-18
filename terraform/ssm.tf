@@ -4,6 +4,12 @@ resource "aws_ssm_parameter" "target_group_arn" {
   value = aws_lb_target_group.service.arn
 }
 
+resource "aws_ssm_parameter" "saga_replies_queue_url" {
+  name  = "/fase4/${local.service}/sqs/saga-replies-queue-url"
+  type  = "String"
+  value = aws_sqs_queue.saga_replies.url
+}
+
 # `.address`, não `.endpoint`: o endpoint já vem "host:5432" e as URLs dos consumidores sairiam "host:5432:5432".
 resource "aws_ssm_parameter" "rds_endpoint" {
   name  = "/fase4/${local.service}/rds/endpoint"

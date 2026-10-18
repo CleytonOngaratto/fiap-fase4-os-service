@@ -12,10 +12,14 @@ import br.com.fiap.postech.carworkshop.workorder.adapter.presenter.WorkOrderResp
 import br.com.fiap.postech.carworkshop.workorder.adapter.presenter.WorkOrderTrackingResponse;
 import br.com.fiap.postech.carworkshop.workorder.domain.entity.StatusWO;
 import br.com.fiap.postech.carworkshop.workorder.domain.entity.WorkOrder;
+import br.com.fiap.postech.carworkshop.workorder.domain.message.SagaEnvelope;
+import br.com.fiap.postech.carworkshop.workorder.domain.message.StartDiagnosisPayload;
 import br.com.fiap.postech.carworkshop.workorder.usecase.port.in.WorkOrderUseCase;
 import br.com.fiap.postech.carworkshop.workorder.usecase.port.out.AutoServiceDataPort;
+import br.com.fiap.postech.carworkshop.workorder.usecase.port.out.CorrelationIdPort;
 import br.com.fiap.postech.carworkshop.workorder.usecase.port.out.CustomerDataPort;
 import br.com.fiap.postech.carworkshop.workorder.usecase.port.out.InventoryDataPort;
+import br.com.fiap.postech.carworkshop.workorder.usecase.port.out.SagaOutboxPort;
 import br.com.fiap.postech.carworkshop.workorder.usecase.port.out.VehicleDataPort;
 import br.com.fiap.postech.carworkshop.workorder.usecase.port.out.WorkOrderMetricsPort;
 import br.com.fiap.postech.carworkshop.workorder.usecase.port.out.WorkOrderNotificationPort;
@@ -29,6 +33,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @Slf4j
 public class WorkOrderInteractor implements WorkOrderUseCase {
@@ -40,6 +45,8 @@ public class WorkOrderInteractor implements WorkOrderUseCase {
     private final InventoryDataPort inventoryDataPort;
     private final WorkOrderNotificationPort notificationPort;
     private final WorkOrderMetricsPort metricsPort;
+    private final SagaOutboxPort sagaOutboxPort;
+    private final CorrelationIdPort correlationIdPort;
 
     public WorkOrderInteractor(WorkOrderRepositoryPort workOrderRepository,
                                CustomerDataPort customerDataPort,
@@ -47,7 +54,9 @@ public class WorkOrderInteractor implements WorkOrderUseCase {
                                AutoServiceDataPort autoServiceDataPort,
                                InventoryDataPort inventoryDataPort,
                                WorkOrderNotificationPort notificationPort,
-                               WorkOrderMetricsPort metricsPort) {
+                               WorkOrderMetricsPort metricsPort,
+                               SagaOutboxPort sagaOutboxPort,
+                               CorrelationIdPort correlationIdPort) {
         this.workOrderRepository = workOrderRepository;
         this.customerDataPort = customerDataPort;
         this.vehicleDataPort = vehicleDataPort;
@@ -55,6 +64,8 @@ public class WorkOrderInteractor implements WorkOrderUseCase {
         this.inventoryDataPort = inventoryDataPort;
         this.notificationPort = notificationPort;
         this.metricsPort = metricsPort;
+        this.sagaOutboxPort = sagaOutboxPort;
+        this.correlationIdPort = correlationIdPort;
     }
 
     @Override
@@ -94,9 +105,27 @@ public class WorkOrderInteractor implements WorkOrderUseCase {
                 services, parts
         );
         WorkOrder saved = workOrderRepository.save(workOrder);
+        sagaOutboxPort.append(SagaEnvelope.startDiagnosis(
+                saved.getId(),
+                UUID.randomUUID(),
+                correlationIdPort.current(),
+                new StartDiagnosisPayload(saved.getVehiclePlate())));
         log.info("Work Order {} created.", saved.getId());
         recordTransition(saved);
         return WorkOrderResponse.from(saved);
+    }
+
+    @Override
+    public void startDiagnosis(Long id) {
+        WorkOrder workOrder = workOrderRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Work Order not found."));
+        if (!workOrder.startDiagnosis()) {
+            log.info("Work Order {} is already in {}: nothing to do.", id, workOrder.getStatus());
+            return;
+        }
+        WorkOrder saved = workOrderRepository.save(workOrder);
+        log.info("Work Order {} status changed to {}.", id, saved.getStatus());
+        recordTransition(saved);
     }
 
     private static final Map<StatusWO, Integer> STATUS_PRIORITY = Map.of(

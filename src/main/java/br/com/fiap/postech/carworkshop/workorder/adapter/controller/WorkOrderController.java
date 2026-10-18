@@ -8,6 +8,7 @@ import br.com.fiap.postech.carworkshop.workorder.adapter.presenter.WorkOrderResp
 import br.com.fiap.postech.carworkshop.workorder.usecase.port.in.WorkOrderUseCase;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
+import jakarta.transaction.Transactional;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -64,6 +65,9 @@ public class WorkOrderController {
     @POST
     @RolesAllowed("ADMIN")
     @Operation(summary = "Create a new work order")
+    // A transacao vive aqui porque o interactor e produzido por @Produces (instancia criada com new, que o CDI
+    // nao intercepta): sem este @Transactional, a OS e a linha do outbox comitariam separadas.
+    @Transactional
     public Response create(WorkOrderRequest request) {
         if (request == null) throw new BadRequestException("Request body is required.");
         WorkOrderResponse created = useCase.create(request);

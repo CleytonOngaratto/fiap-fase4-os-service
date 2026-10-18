@@ -22,6 +22,7 @@ public class TraceIdFilter implements ContainerRequestFilter, ContainerResponseF
                 ? UUID.randomUUID().toString()
                 : inbound;
         MDC.put(MDC_KEY, traceId);
+        MDC.put(LogContext.CORRELATION_ID, traceId);
         requestContext.setProperty(MDC_KEY, traceId);
     }
 
@@ -32,5 +33,6 @@ public class TraceIdFilter implements ContainerRequestFilter, ContainerResponseF
             responseContext.getHeaders().putSingle(TRACE_ID_HEADER, traceId);
         }
         MDC.remove(MDC_KEY);
+        MDC.remove(LogContext.CORRELATION_ID);
     }
 }

@@ -50,6 +50,16 @@ class ArchitectureTest {
     }
 
     @Test
+    void domain_and_usecase_do_not_know_external_providers() {
+        noClasses()
+                .that().resideInAnyPackage("..domain..", "..usecase..")
+                .should().dependOnClassesThat().resideInAnyPackage(
+                        "software.amazon..", "com.amazonaws..", "com.mercadopago..", "com.newrelic..")
+                .as("domain and usecase must not depend on AWS, Mercado Pago or New Relic")
+                .check(productionClasses);
+    }
+
+    @Test
     void workorder_gateways_do_not_reach_other_modules_infrastructure() {
         noClasses()
                 .that().resideInAPackage("..workorder.adapter.gateway..")

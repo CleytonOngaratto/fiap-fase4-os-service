@@ -11,6 +11,7 @@ import java.util.List;
 
 public interface WorkOrderUseCase {
     WorkOrderResponse create(WorkOrderRequest request);
+    void startDiagnosis(Long id);
     List<WorkOrderDetailResponse> findAll();
     List<WorkOrderDetailResponse> findAllActive();
     WorkOrderDetailResponse findById(Long id);

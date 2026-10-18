@@ -14,10 +14,13 @@ import br.com.fiap.postech.carworkshop.workorder.adapter.presenter.WorkOrderResp
 import br.com.fiap.postech.carworkshop.workorder.adapter.presenter.WorkOrderTrackingResponse;
 import br.com.fiap.postech.carworkshop.workorder.domain.entity.StatusWO;
 import br.com.fiap.postech.carworkshop.workorder.domain.entity.WorkOrder;
+import br.com.fiap.postech.carworkshop.workorder.domain.message.SagaEnvelope;
+import br.com.fiap.postech.carworkshop.workorder.domain.message.StartDiagnosisPayload;
 import br.com.fiap.postech.carworkshop.workorder.usecase.interactor.WorkOrderInteractor;
 import br.com.fiap.postech.carworkshop.workorder.usecase.port.out.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
@@ -59,6 +62,12 @@ class WorkOrderInteractorTest {
     @Mock
     WorkOrderMetricsPort metricsPort;
 
+    @Mock
+    SagaOutboxPort sagaOutboxPort;
+
+    @Mock
+    CorrelationIdPort correlationIdPort;
+
     private AutoService autoServiceDomain;
     private PartsAndSupply partsDomain;
 
@@ -98,6 +107,71 @@ class WorkOrderInteractorTest {
         assertNotNull(result);
         assertEquals(StatusWO.RECEIVED, result.status());
         verify(workOrderRepository).save(any());
+    }
+
+    @Test
+    void testCreate_WritesStartDiagnosisInTheOutboxWithTheCorrelationId() {
+        when(customerDataPort.findById(1L)).thenReturn(Optional.of(new CustomerDataPort.CustomerInfo(1L, "joao@email.com")));
+        when(vehicleDataPort.findById(1L)).thenReturn(Optional.of(new VehicleDataPort.VehicleInfo(1L, "ABC-1234")));
+        when(autoServiceDataPort.findByIds(anyList())).thenReturn(List.of(autoServiceDomain));
+        when(workOrderRepository.save(any())).thenReturn(workOrderInStatus(StatusWO.RECEIVED));
+        when(correlationIdPort.current()).thenReturn("EVIDENCIA-B3-001");
+
+        interactor.create(validRequest());
+
+        ArgumentCaptor<SagaEnvelope> captor = ArgumentCaptor.forClass(SagaEnvelope.class);
+        verify(sagaOutboxPort).append(captor.capture());
+        SagaEnvelope envelope = captor.getValue();
+        assertEquals("StartDiagnosis", envelope.type());
+        assertEquals(1, envelope.version());
+        assertEquals(1L, envelope.workOrderId());
+        assertEquals("EVIDENCIA-B3-001", envelope.correlationId());
+        assertNotNull(envelope.messageId());
+        assertNotNull(envelope.sagaId());
+        assertNull(envelope.causationId());
+        assertEquals(new StartDiagnosisPayload("ABC-1234"), envelope.payload());
+    }
+
+    @Test
+    void testCreate_WhenValidationFails_NothingGoesToTheOutbox() {
+        WorkOrderRequest req = new WorkOrderRequest();
+        req.setCustomerId(1L);
+        req.setVehicleId(1L);
+        req.setServiceIds(List.of());
+
+        assertThrows(ValidationException.class, () -> interactor.create(req));
+        verifyNoInteractions(sagaOutboxPort);
+    }
+
+    @Test
+    void testStartDiagnosis_AdvancesAndRecordsTheTransition() {
+        WorkOrder received = workOrderInStatus(StatusWO.RECEIVED);
+        when(workOrderRepository.findById(1L)).thenReturn(Optional.of(received));
+        when(workOrderRepository.save(any())).thenReturn(workOrderInStatus(StatusWO.UNDER_DIAGNOSIS));
+
+        interactor.startDiagnosis(1L);
+
+        assertEquals(StatusWO.UNDER_DIAGNOSIS, received.getStatus());
+        verify(workOrderRepository).save(received);
+        verify(metricsPort).recordStatusChange(StatusWO.UNDER_DIAGNOSIS);
+    }
+
+    @Test
+    void testStartDiagnosis_WhenAlreadyAdvanced_DoesNotSaveAgain() {
+        when(workOrderRepository.findById(1L)).thenReturn(Optional.of(workOrderInStatus(StatusWO.UNDER_DIAGNOSIS)));
+
+        interactor.startDiagnosis(1L);
+
+        verify(workOrderRepository, never()).save(any());
+        verifyNoInteractions(metricsPort);
+    }
+
+    @Test
+    void testStartDiagnosis_WhenWorkOrderDoesNotExist_Throws() {
+        when(workOrderRepository.findById(99L)).thenReturn(Optional.empty());
+
+        assertThrows(EntityNotFoundException.class, () -> interactor.startDiagnosis(99L));
+        verify(workOrderRepository, never()).save(any());
     }
 
     @Test

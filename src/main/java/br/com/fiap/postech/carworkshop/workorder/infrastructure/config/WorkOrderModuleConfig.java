@@ -3,8 +3,10 @@ package br.com.fiap.postech.carworkshop.workorder.infrastructure.config;
 import br.com.fiap.postech.carworkshop.workorder.usecase.interactor.WorkOrderInteractor;
 import br.com.fiap.postech.carworkshop.workorder.usecase.port.in.WorkOrderUseCase;
 import br.com.fiap.postech.carworkshop.workorder.usecase.port.out.AutoServiceDataPort;
+import br.com.fiap.postech.carworkshop.workorder.usecase.port.out.CorrelationIdPort;
 import br.com.fiap.postech.carworkshop.workorder.usecase.port.out.CustomerDataPort;
 import br.com.fiap.postech.carworkshop.workorder.usecase.port.out.InventoryDataPort;
+import br.com.fiap.postech.carworkshop.workorder.usecase.port.out.SagaOutboxPort;
 import br.com.fiap.postech.carworkshop.workorder.usecase.port.out.VehicleDataPort;
 import br.com.fiap.postech.carworkshop.workorder.usecase.port.out.WorkOrderMetricsPort;
 import br.com.fiap.postech.carworkshop.workorder.usecase.port.out.WorkOrderNotificationPort;
@@ -23,8 +25,11 @@ public class WorkOrderModuleConfig {
                                              AutoServiceDataPort autoServiceDataPort,
                                              InventoryDataPort inventoryDataPort,
                                              WorkOrderNotificationPort notificationPort,
-                                             WorkOrderMetricsPort metricsPort) {
+                                             WorkOrderMetricsPort metricsPort,
+                                             SagaOutboxPort sagaOutboxPort,
+                                             CorrelationIdPort correlationIdPort) {
         return new WorkOrderInteractor(workOrderRepository, customerDataPort, vehicleDataPort,
-                autoServiceDataPort, inventoryDataPort, notificationPort, metricsPort);
+                autoServiceDataPort, inventoryDataPort, notificationPort, metricsPort,
+                sagaOutboxPort, correlationIdPort);
     }
 }
