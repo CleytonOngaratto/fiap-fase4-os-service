@@ -103,19 +103,25 @@ jobs:
       - name: Wait for the service contract (SSM)
         run: |
           set -euo pipefail
-          params=(
-            "/fase4/$SERVICE/alb/target-group-arn"
-            "/fase4/$SERVICE/rds/endpoint"
-            "/fase4/$SERVICE/rds/port"
-            "/fase4/$SERVICE/rds/db-name"
-            "/fase4/$SERVICE/rds/username"
-            "/fase4/$SERVICE/rds/password"
+          own="o terraform.yml deste repositorio (terraform/)"
+          # A fila de comandos e publicada pelo OUTRO repositorio: por isso o execution e mergeado antes do os.
+          other="o terraform.yml do fiap-fase4-execution-service"
+
+          declare -A owners=(
+            ["/fase4/$SERVICE/alb/target-group-arn"]="$own"
+            ["/fase4/$SERVICE/rds/endpoint"]="$own"
+            ["/fase4/$SERVICE/rds/port"]="$own"
+            ["/fase4/$SERVICE/rds/db-name"]="$own"
+            ["/fase4/$SERVICE/rds/username"]="$own"
+            ["/fase4/$SERVICE/rds/password"]="$own"
+            ["/fase4/$SERVICE/sqs/saga-replies-queue-url"]="$own"
+            ["/fase4/execution/sqs/commands-queue-url"]="$other"
           )
           deadline=$((SECONDS + 1500))
 
           while :; do
             missing=()
-            for p in "${params[@]}"; do
+            for p in "${!owners[@]}"; do
               aws ssm get-parameter --name "$p" > /dev/null 2>&1 || missing+=("$p")
             done
             if [ "${#missing[@]}" -eq 0 ]; then
@@ -123,7 +129,7 @@ jobs:
             fi
             if [ "$SECONDS" -ge "$deadline" ]; then
               for p in "${missing[@]}"; do
-                echo "::error::SSM: parametro '$p' ausente depois de 25 min. Quem publica: o terraform.yml deste repositorio (terraform/)."
+                echo "::error::SSM: parametro '$p' ausente depois de 25 min. Quem publica: ${owners[$p]}."
               done
               exit 1
             fi
@@ -131,9 +137,23 @@ jobs:
             sleep 20
           done
 
-          tg=$(aws ssm get-parameter --name "/fase4/$SERVICE/alb/target-group-arn" --query Parameter.Value --output text)
-          echo "TARGET_GROUP_ARN=$tg" >> "$GITHUB_ENV"
-          echo "target group: $tg"
+          read_param() {
+            aws ssm get-parameter --name "$1" --query Parameter.Value --output text
+          }
+
+          tg=$(read_param "/fase4/$SERVICE/alb/target-group-arn")
+          replies=$(read_param "/fase4/$SERVICE/sqs/saga-replies-queue-url")
+          commands=$(read_param /fase4/execution/sqs/commands-queue-url)
+
+          {
+            echo "TARGET_GROUP_ARN=$tg"
+            echo "SAGA_REPLIES_QUEUE_URL=$replies"
+            echo "COMMANDS_QUEUE_URL=$commands"
+          } >> "$GITHUB_ENV"
+
+          echo "target group  : $tg"
+          echo "fila respostas: $replies"
+          echo "fila comandos : $commands"
 
       - name: Log in to Amazon ECR
         uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
@@ -162,7 +182,16 @@ jobs:
           set -euo pipefail
           kubectl apply -f "$MANIFESTS/namespace.yaml"
           kubectl apply -f "$MANIFESTS/serviceaccount.yaml"
-          kubectl apply -f "$MANIFESTS/configmap.yaml"
+
+          for placeholder in __EXECUTION_COMMANDS_QUEUE_URL__ __SAGA_REPLIES_QUEUE_URL__; do
+            if ! grep -q "$placeholder" "$MANIFESTS/configmap.yaml"; then
+              echo "::error::configmap.yaml sem o placeholder $placeholder - alguem hardcodou o valor?"
+              exit 1
+            fi
+          done
+          sed -e "s|__EXECUTION_COMMANDS_QUEUE_URL__|${COMMANDS_QUEUE_URL}|" \
+              -e "s|__SAGA_REPLIES_QUEUE_URL__|${SAGA_REPLIES_QUEUE_URL}|" \
+            "$MANIFESTS/configmap.yaml" | kubectl apply -f -
 
       # Um único step: o GITHUB_ENV de um step fica legível pelos seguintes.
       # Regenerados a todo deploy: a senha do RDS muda a cada apply.

@@ -90,6 +90,20 @@ spike de 2026-09-29.
 *tolerant reader*. Mudança **quebrando** contrato cria `version: 2`, e as duas versões convivem até todos os
 consumidores migrarem. Nunca se reaproveita um `type`.
 
+**Campos que o v1 ainda não envia.** Enquanto o dado não existe no domínio, o campo é **omitido** — não vai com
+valor de preenchimento. Valor inventado entra em log e em painel e deixa de ser distinguível do real; ausência o
+consumidor já sabe tratar, porque é *tolerant reader* por contrato.
+
+| Campo | Entra quando | Até lá |
+|---|---|---|
+| `branchId` | a abertura da OS passar a receber a filial | ausente do envelope |
+| `complaint` (no `StartDiagnosis`) | a abertura passar a receber o relato do problema | ausente do `payload`; o `vehiclePlate` sai da própria OS |
+| `mechanic` (no `DiagnosisStarted`) | o Execution tiver mecânicos e fila por filial | ausente do `payload` |
+
+**`sagaId` antes da tabela da saga.** O `sagaId` já viaja em todas as mensagens, gerado na abertura da OS e
+devolvido pelos participantes na resposta — mas a tabela `saga_instance` só existe a partir do bloco do
+orquestrador. Até lá ele serve para **correlacionar os logs** de uma mesma saga, não para recuperar estado.
+
 ---
 
 ## 3. Comandos (OS → participante)

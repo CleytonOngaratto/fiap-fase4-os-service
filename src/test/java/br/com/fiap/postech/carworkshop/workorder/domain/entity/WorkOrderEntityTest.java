@@ -66,6 +66,35 @@ class WorkOrderEntityTest {
     }
 
     @Test
+    void testStartDiagnosis_FromReceived_Advances() {
+        WorkOrder workOrder = WorkOrder.create(customerId, customerEmail, vehicleId, vehiclePlate, services, List.of());
+
+        assertTrue(workOrder.startDiagnosis());
+        assertEquals(StatusWO.UNDER_DIAGNOSIS, workOrder.getStatus());
+    }
+
+    @Test
+    void testStartDiagnosis_WhenAlreadyUnderDiagnosis_IsANoOp() {
+        WorkOrder workOrder = WorkOrder.create(customerId, customerEmail, vehicleId, vehiclePlate, services, List.of());
+        workOrder.startDiagnosis();
+
+        assertFalse(workOrder.startDiagnosis());
+        assertEquals(StatusWO.UNDER_DIAGNOSIS, workOrder.getStatus());
+    }
+
+    @Test
+    void testStartDiagnosis_FromAnyOtherStatus_LeavesTheStatusUntouched() {
+        for (StatusWO status : List.of(StatusWO.PENDING_APPROVAL, StatusWO.IN_PROGRESS,
+                StatusWO.COMPLETED, StatusWO.CANCELED, StatusWO.DELIVERED)) {
+            WorkOrder workOrder = WorkOrder.create(customerId, customerEmail, vehicleId, vehiclePlate, services, List.of());
+            workOrder.setStatus(status);
+
+            assertFalse(workOrder.startDiagnosis());
+            assertEquals(status, workOrder.getStatus());
+        }
+    }
+
+    @Test
     void testGenerateBudget_Success() {
         WorkOrder workOrder = WorkOrder.create(customerId, customerEmail, vehicleId, vehiclePlate, services, List.of());
         workOrder.generateBudget();

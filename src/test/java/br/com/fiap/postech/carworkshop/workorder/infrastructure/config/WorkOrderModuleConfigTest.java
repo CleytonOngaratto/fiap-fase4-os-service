@@ -4,8 +4,10 @@ import br.com.fiap.postech.carworkshop.workorder.infrastructure.config.WorkOrder
 import br.com.fiap.postech.carworkshop.workorder.usecase.interactor.WorkOrderInteractor;
 import br.com.fiap.postech.carworkshop.workorder.usecase.port.in.WorkOrderUseCase;
 import br.com.fiap.postech.carworkshop.workorder.usecase.port.out.AutoServiceDataPort;
+import br.com.fiap.postech.carworkshop.workorder.usecase.port.out.CorrelationIdPort;
 import br.com.fiap.postech.carworkshop.workorder.usecase.port.out.CustomerDataPort;
 import br.com.fiap.postech.carworkshop.workorder.usecase.port.out.InventoryDataPort;
+import br.com.fiap.postech.carworkshop.workorder.usecase.port.out.SagaOutboxPort;
 import br.com.fiap.postech.carworkshop.workorder.usecase.port.out.VehicleDataPort;
 import br.com.fiap.postech.carworkshop.workorder.usecase.port.out.WorkOrderMetricsPort;
 import br.com.fiap.postech.carworkshop.workorder.usecase.port.out.WorkOrderNotificationPort;
@@ -27,7 +29,9 @@ class WorkOrderModuleConfigTest {
                 mock(AutoServiceDataPort.class),
                 mock(InventoryDataPort.class),
                 mock(WorkOrderNotificationPort.class),
-                mock(WorkOrderMetricsPort.class));
+                mock(WorkOrderMetricsPort.class),
+                mock(SagaOutboxPort.class),
+                mock(CorrelationIdPort.class));
 
         assertNotNull(useCase);
         assertInstanceOf(WorkOrderInteractor.class, useCase);

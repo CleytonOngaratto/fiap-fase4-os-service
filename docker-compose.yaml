@@ -20,11 +20,20 @@ services:
       # Sem valor: repassa do ambiente e omite se ausente; ${VAR:-} mandaria vazio, que o agente trata diferente.
       NEW_RELIC_LICENSE_KEY:
       NEW_RELIC_APP_NAME: ${NEW_RELIC_APP_NAME:-car-workshop-api-local}
+      # A imagem roda com o perfil de producao: endpoint, credencial e filas vem por env, nao pelo %dev.
+      QUARKUS_SQS_ENDPOINT_OVERRIDE: http://oficina_mq:9324
+      QUARKUS_SQS_AWS_CREDENTIALS_TYPE: static
+      QUARKUS_SQS_AWS_CREDENTIALS_STATIC_PROVIDER_ACCESS_KEY_ID: elasticmq
+      QUARKUS_SQS_AWS_CREDENTIALS_STATIC_PROVIDER_SECRET_ACCESS_KEY: elasticmq
+      EXECUTION_COMMANDS_QUEUE_URL: http://oficina_mq:9324/000000000000/execution-commands.fifo
+      SAGA_REPLIES_QUEUE_URL: http://oficina_mq:9324/000000000000/os-saga-replies.fifo
     volumes:
       - ./secrets:/deployments/secrets:ro
     depends_on:
       oficina_db:
         condition: service_healthy
+      oficina_mq:
+        condition: service_started
 
   oficina_db:
     image: postgres:16
@@ -42,6 +51,14 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  oficina_mq:
+    image: softwaremill/elasticmq-native:1.7.1
+    container_name: oficina_mq
+    ports:
+      - "${MQ_PORT_HOST:-9324}:9324"
+    volumes:
+      - ./docker/elasticmq/elasticmq.conf:/opt/elasticmq.conf:ro
 
   sonarqube:
     image: sonarqube:10.4.1-community

@@ -50,6 +50,16 @@ public class WorkOrder {
                 .build();
     }
 
+    // Idempotente de proposito, diferente dos comandos abaixo: a resposta da saga pode ser reentregue, e
+    // lancar aqui mandaria toda duplicata para a DLQ.
+    public boolean startDiagnosis() {
+        if (this.status != StatusWO.RECEIVED) {
+            return false;
+        }
+        this.status = StatusWO.UNDER_DIAGNOSIS;
+        return true;
+    }
+
     public void generateBudget() {
         BigDecimal total = BigDecimal.ZERO;
         for (AutoService service : this.services) {

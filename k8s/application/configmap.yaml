@@ -16,3 +16,7 @@ data:
 
   JWT_PUBLIC_KEY_LOCATION: file:/deployments/secrets/publicKey.pem
   JWT_PRIVATE_KEY_LOCATION: file:/deployments/secrets/privateKey.pem
+
+  # Trocados no deploy pelo cd.yml; aplicados crus, o relay e o consumidor sobem sem fila.
+  EXECUTION_COMMANDS_QUEUE_URL: __EXECUTION_COMMANDS_QUEUE_URL__
+  SAGA_REPLIES_QUEUE_URL: __SAGA_REPLIES_QUEUE_URL__
