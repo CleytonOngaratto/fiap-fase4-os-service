@@ -33,6 +33,14 @@ public class WorkOrderRepositoryGateway implements WorkOrderRepositoryPort {
             existing.setBudgetApprovalDate(workOrder.getBudgetApprovalDate());
             existing.setEndDate(workOrder.getEndDate());
             existing.setDeleted(workOrder.isDeleted());
+            // Os itens chegam no diagnostico, depois da criacao: sem copiar as colecoes aqui, o total
+            // persiste e o snapshot precificado nao, e a reserva de estoque nao encontra peca nenhuma.
+            if (workOrder.getServices() != null) {
+                existing.setServices(mapper.toServiceSnapshots(workOrder.getServices()));
+            }
+            if (workOrder.getParts() != null) {
+                existing.setParts(mapper.toPartSnapshots(workOrder.getParts()));
+            }
             return mapper.toDomain(existing);
         }
         WorkOrderJpaEntity entity = mapper.toJpaEntity(workOrder);

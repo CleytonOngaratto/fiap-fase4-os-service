@@ -9,6 +9,7 @@ import br.com.fiap.postech.carworkshop.workorder.infrastructure.persistence.Work
 import io.quarkus.test.TestTransaction;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -26,6 +27,9 @@ class WorkOrderRepositoryGatewayTest {
 
     @Inject
     WorkOrderPanacheRepository workOrderRepository;
+
+    @Inject
+    EntityManager entityManager;
 
     @Test
     @TestTransaction
@@ -71,5 +75,37 @@ class WorkOrderRepositoryGatewayTest {
         assertEquals(new BigDecimal("35.90"), reloadedPart.getPrice());
         assertEquals(TypeProductEnum.UNITARY, reloadedPart.getType());
         assertEquals(10, reloadedPart.getQuantity());
+    }
+
+    @Test
+    @TestTransaction
+    void save_persists_the_items_that_arrive_after_creation() {
+        workOrderRepository.deleteAll();
+        WorkOrder opened = gateway.save(WorkOrder.builder()
+                .customerId(1L).customerEmail("john.silva@email.com")
+                .vehicleId(3L).vehiclePlate("DEF9G12")
+                .status(StatusWO.RECEIVED).creationDate(LocalDateTime.now())
+                .build());
+
+        assertTrue(opened.startDiagnosis());
+        assertTrue(opened.priceDiagnosis("Oleo vencido",
+                List.of(AutoService.builder()
+                        .id(10L).description("Troca de Óleo").price(new BigDecimal("150.00")).build()),
+                List.of(PartsAndSupply.builder()
+                        .id(20L).code("P001").manufacturer("Bosch").description("Filtro de óleo")
+                        .price(new BigDecimal("35.90")).type(TypeProductEnum.UNITARY).quantity(3).build()),
+                new BigDecimal("257.70")));
+        gateway.save(opened);
+
+        entityManager.flush();
+        entityManager.clear();
+
+        WorkOrder reloaded = gateway.findById(opened.getId()).orElseThrow();
+        assertEquals(new BigDecimal("257.70"), reloaded.getBudgetValue());
+        assertEquals(1, reloaded.getServices().size());
+        assertEquals(10L, reloaded.getServices().get(0).getId());
+        assertEquals(1, reloaded.getParts().size());
+        assertEquals(20L, reloaded.getParts().get(0).getId());
+        assertEquals(3, reloaded.getParts().get(0).getQuantity());
     }
 }
