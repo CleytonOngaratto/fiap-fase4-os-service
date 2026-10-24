@@ -10,6 +10,6 @@ public class WorkOrderStatusHistoryPanacheRepository
         implements PanacheRepository<WorkOrderStatusHistoryJpaEntity> {
 
     public List<WorkOrderStatusHistoryJpaEntity> findByWorkOrderId(Long workOrderId) {
-        return list("work_order_id = ?1 order by changed_at", workOrderId);
+        return list("workOrderId = ?1 order by changedAt", workOrderId);
     }
 }
