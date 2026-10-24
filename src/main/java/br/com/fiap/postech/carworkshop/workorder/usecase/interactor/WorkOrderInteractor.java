@@ -30,7 +30,7 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.temporal.ChronoUnit;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -145,7 +145,7 @@ public class WorkOrderInteractor implements WorkOrderUseCase {
 
         if (transition == WorkOrderTransition.COMPLETE) {
             metricsPort.recordCompletion(saved.getBranchId(),
-                    Duration.between(saved.getCreationDate(), saved.getEndDate()));
+                    elapsed(saved.getCreationDate(), saved.getEndDate()));
             notificationPort.notifyCompleted(new WorkOrderNotificationPort.CompletedNotification(
                     saved.getId(), saved.getCustomerId(), saved.getCustomerEmail()));
         }
@@ -232,7 +232,7 @@ public class WorkOrderInteractor implements WorkOrderUseCase {
         List<WorkOrder> completed = workOrderRepository.findCompleted();
         if (completed.isEmpty()) return 0.0;
         double totalMinutes = completed.stream()
-                .mapToLong(wo -> ChronoUnit.MINUTES.between(wo.getCreationDate(), wo.getEndDate()))
+                .mapToLong(wo -> elapsed(wo.getCreationDate(), wo.getEndDate()).toMinutes())
                 .sum();
         return totalMinutes / 60.0 / completed.size();
     }
@@ -313,7 +313,15 @@ public class WorkOrderInteractor implements WorkOrderUseCase {
         metricsPort.recordTimeToStatus(
                 workOrder.getStatus(),
                 workOrder.getBranchId(),
-                Duration.between(workOrder.getCreationDate(), LocalDateTime.now()));
+                elapsed(workOrder.getCreationDate(), LocalDateTime.now()));
+    }
+
+    // LocalDateTime nao carrega fuso, e medir duracao entre dois deles erra quando o intervalo atravessa
+    // mudanca de horario. Os dois instantes nascem do relogio desta JVM, entao e o fuso do sistema que os
+    // reconstitui.
+    private static Duration elapsed(LocalDateTime from, LocalDateTime to) {
+        ZoneId zone = ZoneId.systemDefault();
+        return Duration.between(from.atZone(zone).toInstant(), to.atZone(zone).toInstant());
     }
 
     private static boolean isBlank(String value) {
