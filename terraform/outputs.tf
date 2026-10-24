@@ -37,3 +37,8 @@ output "saga_reply_topics" {
   description = "Tópicos cujos eventos chegam à fila de respostas."
   value       = keys(local.saga_reply_topic_arns)
 }
+
+output "internal_service_token_parameter" {
+  description = "Onde a Lambda de auth busca a credencial do endpoint interno (SecureString)."
+  value       = aws_ssm_parameter.internal_service_token.name
+}

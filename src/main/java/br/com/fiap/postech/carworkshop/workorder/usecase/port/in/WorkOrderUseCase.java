@@ -1,26 +1,24 @@
 package br.com.fiap.postech.carworkshop.workorder.usecase.port.in;
 
-import br.com.fiap.postech.carworkshop.workorder.adapter.dto.DiagnosisRequest;
-import br.com.fiap.postech.carworkshop.workorder.adapter.dto.WorkOrderRequest;
-import br.com.fiap.postech.carworkshop.workorder.adapter.presenter.DiagnosisResponse;
-import br.com.fiap.postech.carworkshop.workorder.adapter.presenter.WorkOrderDetailResponse;
-import br.com.fiap.postech.carworkshop.workorder.adapter.presenter.WorkOrderResponse;
-import br.com.fiap.postech.carworkshop.workorder.adapter.presenter.WorkOrderTrackingResponse;
+import br.com.fiap.postech.carworkshop.shared.domain.CancelReason;
+import br.com.fiap.postech.carworkshop.workorder.domain.entity.WorkOrder;
+import br.com.fiap.postech.carworkshop.workorder.domain.entity.WorkOrderStatusChange;
 
 import java.util.List;
+import java.util.UUID;
 
 public interface WorkOrderUseCase {
-    WorkOrderResponse create(WorkOrderRequest request);
-    void startDiagnosis(Long id);
-    List<WorkOrderDetailResponse> findAll();
-    List<WorkOrderDetailResponse> findAllActive();
-    WorkOrderDetailResponse findById(Long id);
-    DiagnosisResponse completeDiagnosis(Long id, DiagnosisRequest request);
-    WorkOrderDetailResponse completeWorkOrder(Long id);
-    WorkOrderDetailResponse deliverWorkOrder(Long id);
+    WorkOrder create(OpenWorkOrderCommand command);
+    List<WorkOrder> findAll();
+    List<WorkOrder> findAllActive();
+    WorkOrder findById(Long id);
+    WorkOrder deliverWorkOrder(Long id);
     void deleteWorkOrder(Long id);
-    WorkOrderTrackingResponse findForCustomer(Long id);
-    WorkOrderTrackingResponse approveWorkOrder(Long id);
-    WorkOrderTrackingResponse rejectWorkOrder(Long id);
+    WorkOrder findForCustomer(Long id);
+    WorkOrder findForOwner(Long id, String requesterDocument);
+    List<WorkOrderStatusChange> historyOf(Long id);
     Double getAverageCompletionTimeInHours();
+
+    boolean applySagaTransition(Long id, WorkOrderTransition transition, UUID sagaId, CancelReason reason);
+    boolean recordDiagnosis(Long id, String description, List<DiagnosedItem> items, UUID sagaId);
 }

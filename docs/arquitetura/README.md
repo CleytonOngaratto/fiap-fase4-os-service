@@ -24,22 +24,23 @@ Os documentos nascem junto com o código, um bloco por vez; os que ainda não ex
 | [adr/ADR-004-gateway-persistente.md](adr/ADR-004-gateway-persistente.md) | Por que o API Gateway vive fora do ciclo de sessão (URL estável para o webhook do Mercado Pago), como os roots `persistent/` e `session/` dividem a borda e o que um *Reset* do laboratório apaga |
 | [componentes.md](componentes.md) | Diagrama geral: os três serviços, seus bancos, a mensageria, a borda, o Mercado Pago e a observabilidade; quem é dono de cada dado e por que cada travessia de fronteira é síncrona ou assíncrona |
 | [adr/ADR-005-divisao-em-servicos.md](adr/ADR-005-divisao-em-servicos.md) | Por onde o monolito foi cortado em três serviços, e por que não por camada nem por entidade |
+| [banco-de-dados.md](banco-de-dados.md) | Postgres do OS: estado de negócio e estado de processo, o snapshot precificado dos itens, histórico de status, outbox, inbox, `saga_instance` e o estoque com reserva |
+| [adr/ADR-007-lambda-sem-banco-do-os.md](adr/ADR-007-lambda-sem-banco-do-os.md) | Por que a Lambda de autenticação consulta um endpoint interno do OS Service em vez de ler a tabela de clientes, e por que a allowlist do Gateway não basta sozinha |
 | [adr/ADR-006-mensageria.md](adr/ADR-006-mensageria.md) | Por que SNS FIFO publicando em SQS FIFO com outbox transacional, o que isso custa (bloqueio de cabeça de fila, idempotência obrigatória) e o que ficou como dívida registrada |
 | `sequencia.md` | *a escrever (B7)* — sequência da Saga: caminho feliz e compensação |
-| `banco-de-dados.md` | *a escrever (B4–B6)* — Postgres do OS e do Billing, DynamoDB do Execution, outbox e inbox |
 | `lab-vs-producao.md` | *a escrever (B9)* — o que mudaria fora do AWS Academy, decisão por decisão |
-| ADRs restantes | *a escrever, cada um no bloco que implementa a decisão* — Lambda × banco do OS (B4), bancos SQL + NoSQL (B4–B6) |
+| ADRs restantes | *a escrever, cada um no bloco que implementa a decisão* — bancos do Billing e do Execution |
 
 ## Onde está cada tema pedido no Tech Challenge
 
 | Tema do enunciado | Documento |
 |---|---|
 | Três ou mais microsserviços independentes, cada um com repositório, infraestrutura e banco próprios | [componentes.md](componentes.md) · [ADR-005](adr/ADR-005-divisao-em-servicos.md) · [Repositórios](#repositórios) |
-| OS Service: abertura, atualização de status, consulta de status e histórico | [maquina-de-estados.md §1](maquina-de-estados.md) |
+| OS Service: abertura, atualização de status, consulta de status e histórico | [maquina-de-estados.md §1](maquina-de-estados.md) · [banco-de-dados.md](banco-de-dados.md) (`work_order_status_history`) |
 | Billing: orçamento para aprovação, pagamentos e atualização da OS após o pagamento | [maquina-de-estados.md §3](maquina-de-estados.md) · [catalogo-de-mensagens.md §3–4](catalogo-de-mensagens.md) |
 | Execution: fila de execução, status durante diagnóstico e reparo, finalização comunicada ao OS | [maquina-de-estados.md §3](maquina-de-estados.md) · [catalogo-de-mensagens.md §4](catalogo-de-mensagens.md) |
 | Integração com o Mercado Pago | [catalogo-de-mensagens.md](catalogo-de-mensagens.md) (cobrança, confirmação e estorno) · [matriz-de-compensacao.md](matriz-de-compensacao.md) (F4–F8) |
-| Banco próprio por serviço, ao menos um SQL e um NoSQL | `banco-de-dados.md` (B4–B6) |
+| Banco próprio por serviço, ao menos um SQL e um NoSQL | [banco-de-dados.md](banco-de-dados.md) (Postgres do OS; Billing e Execution nos blocos deles) |
 | Nenhum serviço acessa o banco de outro | [catalogo-de-mensagens.md §6](catalogo-de-mensagens.md) (o que é síncrono e por quê) · [ADR-002](adr/ADR-002-credencial-dos-pods.md) (isolamento de credenciais no laboratório) · [componentes.md](componentes.md) |
 | Comunicação REST síncrona quando necessário e mensageria assíncrona | [catalogo-de-mensagens.md §1 e §6](catalogo-de-mensagens.md) · [ADR-006](adr/ADR-006-mensageria.md) |
 | Saga com rollback e compensação em qualquer etapa | [matriz-de-compensacao.md](matriz-de-compensacao.md) · [maquina-de-estados.md §2](maquina-de-estados.md) |

@@ -1,5 +1,6 @@
 package br.com.fiap.postech.carworkshop.workorder.infrastructure.persistence;
 
+import br.com.fiap.postech.carworkshop.shared.domain.CancelReason;
 import br.com.fiap.postech.carworkshop.workorder.domain.entity.StatusWO;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import jakarta.persistence.*;
@@ -33,14 +34,26 @@ public class WorkOrderJpaEntity extends PanacheEntityBase {
     @Column(name = "customer_email")
     private String customerEmail;
 
+    @Column(name = "customer_document")
+    private String customerDocument;
+
     @Column(name = "vehicle_id")
     private Long vehicleId;
 
     @Column(name = "vehicle_plate")
     private String vehiclePlate;
 
+    @Column(name = "branch_id")
+    private String branchId;
+
+    private String complaint;
+
     @Enumerated(EnumType.STRING)
     private StatusWO status;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "cancel_reason")
+    private CancelReason cancelReason;
 
     @Column(name = "creation_date")
     private LocalDateTime creationDate;

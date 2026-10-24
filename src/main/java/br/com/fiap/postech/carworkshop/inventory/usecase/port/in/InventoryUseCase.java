@@ -12,4 +12,9 @@ public interface InventoryUseCase {
     void update(Long id, PartsAndSupplyRequest request);
     void delete(Long id);
     void consumeStock(Long id, Integer quantity);
+
+    void reserve(Long id, int quantity);
+    void confirmReservation(Long id, int quantity);
+    void releaseReservation(Long id, int quantity);
+    void restore(Long id, int quantity);
 }

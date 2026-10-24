@@ -25,6 +25,11 @@ public class UserRepositoryGateway implements UserRepositoryPort {
     }
 
     @Override
+    public boolean hasAnyUser() {
+        return repository.count() > 0;
+    }
+
+    @Override
     @Transactional
     public User save(User user) {
         var entity = mapper.toJpaEntity(user);

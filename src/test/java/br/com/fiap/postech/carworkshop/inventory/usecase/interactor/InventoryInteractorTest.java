@@ -132,4 +132,129 @@ class InventoryInteractorTest {
         assertThrows(ValidationException.class, () -> interactor.delete(0L));
         verifyNoInteractions(repository);
     }
+
+    @Test
+    void reserve_holdsTheUnitsWithoutTakingThemFromStock() {
+        when(repository.findById(1L)).thenReturn(Optional.of(partsDomain));
+
+        interactor.reserve(1L, 3);
+
+        assertEquals(10, partsDomain.getQuantity());
+        assertEquals(3, partsDomain.getReservedQuantity());
+        assertEquals(7, partsDomain.availableQuantity());
+        verify(repository).save(partsDomain);
+    }
+
+    @Test
+    void reserve_beyondTheAvailableQuantity_isRefused() {
+        partsDomain.setQuantity(2);
+        when(repository.findById(1L)).thenReturn(Optional.of(partsDomain));
+
+        assertThrows(StockException.class, () -> interactor.reserve(1L, 3));
+        verify(repository, never()).save(any());
+    }
+
+    @Test
+    void reserve_doesNotCountUnitsAlreadyReservedAsAvailable() {
+        partsDomain.setReservedQuantity(8);
+        when(repository.findById(1L)).thenReturn(Optional.of(partsDomain));
+
+        assertThrows(StockException.class, () -> interactor.reserve(1L, 3));
+        assertEquals(2, partsDomain.availableQuantity());
+    }
+
+    @Test
+    void confirmReservation_takesTheReservedUnitsFromStock() {
+        partsDomain.setReservedQuantity(3);
+        when(repository.findById(1L)).thenReturn(Optional.of(partsDomain));
+
+        interactor.confirmReservation(1L, 3);
+
+        assertEquals(7, partsDomain.getQuantity());
+        assertEquals(0, partsDomain.getReservedQuantity());
+        verify(repository).save(partsDomain);
+    }
+
+    @Test
+    void confirmReservation_withoutAReservation_isRefused() {
+        when(repository.findById(1L)).thenReturn(Optional.of(partsDomain));
+
+        assertThrows(StockException.class, () -> interactor.confirmReservation(1L, 3));
+        assertEquals(10, partsDomain.getQuantity());
+    }
+
+    @Test
+    void releaseReservation_givesTheUnitsBackToAvailableWithoutChangingStock() {
+        partsDomain.setReservedQuantity(3);
+        when(repository.findById(1L)).thenReturn(Optional.of(partsDomain));
+
+        interactor.releaseReservation(1L, 3);
+
+        assertEquals(10, partsDomain.getQuantity());
+        assertEquals(0, partsDomain.getReservedQuantity());
+        assertEquals(10, partsDomain.availableQuantity());
+    }
+
+    @Test
+    void releaseReservation_withoutAReservation_isRefused() {
+        when(repository.findById(1L)).thenReturn(Optional.of(partsDomain));
+
+        assertThrows(StockException.class, () -> interactor.releaseReservation(1L, 1));
+    }
+
+    @Test
+    void restore_putsConsumedUnitsBackIntoStock() {
+        partsDomain.setQuantity(7);
+        when(repository.findById(1L)).thenReturn(Optional.of(partsDomain));
+
+        interactor.restore(1L, 3);
+
+        assertEquals(10, partsDomain.getQuantity());
+        verify(repository).save(partsDomain);
+    }
+
+    @Test
+    void reservationVerbs_refuseANonPositiveQuantity() {
+        when(repository.findById(1L)).thenReturn(Optional.of(partsDomain));
+
+        assertThrows(StockException.class, () -> interactor.reserve(1L, 0));
+        assertThrows(StockException.class, () -> interactor.confirmReservation(1L, -1));
+        assertThrows(StockException.class, () -> interactor.releaseReservation(1L, 0));
+        assertThrows(StockException.class, () -> interactor.restore(1L, -2));
+    }
+
+    @Test
+    void reservationVerbs_onAnUnknownPart_areNotFound() {
+        when(repository.findById(99L)).thenReturn(Optional.empty());
+
+        assertThrows(EntityNotFoundException.class, () -> interactor.reserve(99L, 1));
+        assertThrows(EntityNotFoundException.class, () -> interactor.confirmReservation(99L, 1));
+        assertThrows(EntityNotFoundException.class, () -> interactor.releaseReservation(99L, 1));
+        assertThrows(EntityNotFoundException.class, () -> interactor.restore(99L, 1));
+    }
+
+    @Test
+    void consumeStock_doesNotEatUnitsReservedForAWorkOrder() {
+        partsDomain.setReservedQuantity(8);
+        when(repository.findById(1L)).thenReturn(Optional.of(partsDomain));
+
+        assertThrows(StockException.class, () -> interactor.consumeStock(1L, 5));
+        assertEquals(10, partsDomain.getQuantity());
+
+        interactor.consumeStock(1L, 2);
+        assertEquals(8, partsDomain.getQuantity());
+        assertEquals(0, partsDomain.availableQuantity());
+    }
+
+    @Test
+    void update_cannotDropTheStockBelowWhatIsReserved() {
+        partsDomain.setReservedQuantity(6);
+        when(repository.findById(1L)).thenReturn(Optional.of(partsDomain));
+        PartsAndSupplyRequest shrink = new PartsAndSupplyRequest("P001", "Bosch", "Oil Filter",
+                new BigDecimal("35.90"), TypeProductEnum.UNITARY, 4);
+
+        assertThrows(StockException.class, () -> interactor.update(1L, shrink));
+        assertEquals(10, partsDomain.getQuantity());
+        verify(repository, never()).save(any());
+    }
 }

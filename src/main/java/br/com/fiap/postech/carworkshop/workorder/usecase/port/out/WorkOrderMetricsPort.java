@@ -6,9 +6,9 @@ import java.time.Duration;
 
 public interface WorkOrderMetricsPort {
 
-    void recordStatusChange(StatusWO status);
+    void recordStatusChange(StatusWO status, String branchId);
 
-    void recordCompletion(Duration serviceDuration);
+    void recordCompletion(String branchId, Duration serviceDuration);
 
-    void recordTimeToStatus(StatusWO status, Duration sinceCreation);
+    void recordTimeToStatus(StatusWO status, String branchId, Duration sinceCreation);
 }

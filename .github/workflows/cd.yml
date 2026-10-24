@@ -104,8 +104,10 @@ jobs:
         run: |
           set -euo pipefail
           own="o terraform.yml deste repositorio (terraform/)"
-          # A fila de comandos e publicada pelo OUTRO repositorio: por isso o execution e mergeado antes do os.
+          # As filas dos participantes sao publicadas por OUTROS repositorios: por isso execution e billing
+          # sao aplicados antes do os.
           other="o terraform.yml do fiap-fase4-execution-service"
+          billing="o terraform.yml do fiap-fase4-billing-service"
 
           declare -A owners=(
             ["/fase4/$SERVICE/alb/target-group-arn"]="$own"
@@ -115,7 +117,9 @@ jobs:
             ["/fase4/$SERVICE/rds/username"]="$own"
             ["/fase4/$SERVICE/rds/password"]="$own"
             ["/fase4/$SERVICE/sqs/saga-replies-queue-url"]="$own"
+            ["/fase4/$SERVICE/internal/service-token"]="$own"
             ["/fase4/execution/sqs/commands-queue-url"]="$other"
+            ["/fase4/billing/sqs/commands-queue-url"]="$billing"
           )
           deadline=$((SECONDS + 1500))
 
@@ -144,16 +148,19 @@ jobs:
           tg=$(read_param "/fase4/$SERVICE/alb/target-group-arn")
           replies=$(read_param "/fase4/$SERVICE/sqs/saga-replies-queue-url")
           commands=$(read_param /fase4/execution/sqs/commands-queue-url)
+          billing_commands=$(read_param /fase4/billing/sqs/commands-queue-url)
 
           {
             echo "TARGET_GROUP_ARN=$tg"
             echo "SAGA_REPLIES_QUEUE_URL=$replies"
             echo "COMMANDS_QUEUE_URL=$commands"
+            echo "BILLING_COMMANDS_QUEUE_URL=$billing_commands"
           } >> "$GITHUB_ENV"
 
-          echo "target group  : $tg"
-          echo "fila respostas: $replies"
-          echo "fila comandos : $commands"
+          echo "target group   : $tg"
+          echo "fila respostas : $replies"
+          echo "fila execution : $commands"
+          echo "fila billing   : $billing_commands"
 
       - name: Log in to Amazon ECR
         uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
@@ -183,13 +190,15 @@ jobs:
           kubectl apply -f "$MANIFESTS/namespace.yaml"
           kubectl apply -f "$MANIFESTS/serviceaccount.yaml"
 
-          for placeholder in __EXECUTION_COMMANDS_QUEUE_URL__ __SAGA_REPLIES_QUEUE_URL__; do
+          for placeholder in __EXECUTION_COMMANDS_QUEUE_URL__ __BILLING_COMMANDS_QUEUE_URL__ \
+                             __SAGA_REPLIES_QUEUE_URL__; do
             if ! grep -q "$placeholder" "$MANIFESTS/configmap.yaml"; then
               echo "::error::configmap.yaml sem o placeholder $placeholder - alguem hardcodou o valor?"
               exit 1
             fi
           done
           sed -e "s|__EXECUTION_COMMANDS_QUEUE_URL__|${COMMANDS_QUEUE_URL}|" \
+              -e "s|__BILLING_COMMANDS_QUEUE_URL__|${BILLING_COMMANDS_QUEUE_URL}|" \
               -e "s|__SAGA_REPLIES_QUEUE_URL__|${SAGA_REPLIES_QUEUE_URL}|" \
             "$MANIFESTS/configmap.yaml" | kubectl apply -f -
 
@@ -228,6 +237,9 @@ jobs:
 
           app_key=$(ssm /fase4/app/secret-key "$boot_key" --with-decryption); mask "$app_key"
 
+          internal_token=$(ssm "/fase4/$SERVICE/internal/service-token" "$own" --with-decryption)
+          mask "$internal_token"
+
           nr_key=$(aws ssm get-parameter --name /fase4/newrelic/license-key --with-decryption \
                    --query Parameter.Value --output text 2>/dev/null || true)
           mask "$nr_key"
@@ -238,6 +250,7 @@ jobs:
           b64_jwt_public=$(printf '%s\n' "$jwt_public" | base64 -w0)
           b64_db_pass=$(printf '%s' "$db_pass" | base64 -w0); mask "$b64_db_pass"
           b64_app_key=$(printf '%s' "$app_key" | base64 -w0); mask "$b64_app_key"
+          b64_internal_token=$(printf '%s' "$internal_token" | base64 -w0); mask "$b64_internal_token"
 
           apply_secret() {
             local name="$1"
@@ -264,7 +277,7 @@ jobs:
             "DB_USERNAME: $(printf '%s' "$db_user" | base64 -w0)" \
             "DB_PASSWORD: $b64_db_pass"
 
-          app_pairs=("SECRET_KEY: $b64_app_key")
+          app_pairs=("SECRET_KEY: $b64_app_key" "INTERNAL_SERVICE_TOKEN: $b64_internal_token")
           if [ -n "$nr_key" ]; then
             app_pairs+=("NEW_RELIC_LICENSE_KEY: $(printf '%s' "$nr_key" | base64 -w0)")
           else

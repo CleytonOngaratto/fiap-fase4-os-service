@@ -55,8 +55,11 @@ stateDiagram-v2
   com o dinheiro ainda retido.
 - Toda OS cancelada guarda um **motivo**: `REJECTED_BY_CUSTOMER`, `APPROVAL_EXPIRED`, `OUT_OF_STOCK`,
   `PAYMENT_EXPIRED`, `PAYMENT_REQUEST_FAILED`, `REPAIR_FAILED`, `DIAGNOSIS_FAILED`, `BUDGET_CREATION_FAILED` ou `CANCELED_BY_STAFF` (cancelamento pelo atendimento, permitido em qualquer estado antes do pivô).
-- Toda transição grava uma linha em `work_order_status_history` (status, instante, motivo, `sagaId`). É o que
-  atende "consulta de status e histórico" do edital e fecha a lacuna da Fase 3, que só tinha criação e fim.
+- Toda transição grava uma linha em `work_order_status_history` (status, instante, motivo, `sagaId` e a
+  **filial**). É o que atende "consulta de status e histórico" do edital e fecha a lacuna da Fase 3, que só
+  tinha criação e fim. O motivo do cancelamento também fica em coluna própria da OS (`cancel_reason`), para a
+  consulta do cliente não depender de ler o histórico. Estrutura das tabelas:
+  [banco-de-dados.md](banco-de-dados.md).
 
 ---
 
