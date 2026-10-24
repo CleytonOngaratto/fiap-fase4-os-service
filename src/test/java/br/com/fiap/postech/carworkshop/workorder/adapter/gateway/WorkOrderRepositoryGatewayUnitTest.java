@@ -2,6 +2,7 @@ package br.com.fiap.postech.carworkshop.workorder.adapter.gateway;
 
 import br.com.fiap.postech.carworkshop.autoservice.domain.entity.AutoService;
 import br.com.fiap.postech.carworkshop.inventory.domain.entity.PartsAndSupply;
+import br.com.fiap.postech.carworkshop.shared.domain.CancelReason;
 import br.com.fiap.postech.carworkshop.workorder.domain.entity.StatusWO;
 import br.com.fiap.postech.carworkshop.workorder.domain.entity.WorkOrder;
 import br.com.fiap.postech.carworkshop.workorder.infrastructure.mapper.WorkOrderJpaMapper;
@@ -67,6 +68,18 @@ class WorkOrderRepositoryGatewayUnitTest {
         assertEquals(StatusWO.UNDER_DIAGNOSIS, stored.getStatus());
         assertEquals("Oleo vencido", stored.getDiagnosticDescription());
         assertEquals(new BigDecimal("257.70"), stored.getBudgetValue());
+    }
+
+    @Test
+    void saveCarriesTheCancelReasonOntoTheStoredEntity() {
+        WorkOrder canceled = WorkOrder.builder()
+                .id(7L).status(StatusWO.UNDER_DIAGNOSIS).build();
+        canceled.cancel(CancelReason.OUT_OF_STOCK);
+
+        gateway.save(canceled);
+
+        assertEquals(StatusWO.CANCELED, stored.getStatus());
+        assertEquals(CancelReason.OUT_OF_STOCK, stored.getCancelReason());
     }
 
     @Test

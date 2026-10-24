@@ -47,6 +47,7 @@ public class InventoryRepositoryGateway implements InventoryRepositoryPort {
             existing.setPrice(part.getPrice());
             existing.setType(part.getType());
             existing.setQuantity(part.getQuantity());
+            existing.setReservedQuantity(part.getReservedQuantity());
             return mapper.toDomain(existing);
         }
         PartsAndSupplyJpaEntity entity = mapper.toJpaEntity(part);
