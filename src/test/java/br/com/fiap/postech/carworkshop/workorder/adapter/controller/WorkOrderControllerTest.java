@@ -1,30 +1,32 @@
 package br.com.fiap.postech.carworkshop.workorder.adapter.controller;
 
+import br.com.fiap.postech.carworkshop.saga.usecase.port.in.SagaOrchestratorUseCase;
+import br.com.fiap.postech.carworkshop.shared.domain.CancelReason;
+import br.com.fiap.postech.carworkshop.shared.domain.exception.ConflictException;
 import br.com.fiap.postech.carworkshop.shared.domain.exception.EntityNotFoundException;
 import br.com.fiap.postech.carworkshop.shared.domain.exception.ValidationException;
-import br.com.fiap.postech.carworkshop.workorder.adapter.dto.DiagnosisRequest;
 import br.com.fiap.postech.carworkshop.workorder.adapter.dto.WorkOrderRequest;
-import br.com.fiap.postech.carworkshop.workorder.adapter.presenter.DiagnosisResponse;
-import br.com.fiap.postech.carworkshop.workorder.adapter.presenter.WorkOrderDetailResponse;
-import br.com.fiap.postech.carworkshop.workorder.adapter.presenter.WorkOrderResponse;
 import br.com.fiap.postech.carworkshop.workorder.domain.entity.StatusWO;
+import br.com.fiap.postech.carworkshop.workorder.domain.entity.WorkOrder;
+import br.com.fiap.postech.carworkshop.workorder.domain.entity.WorkOrderStatusChange;
+import br.com.fiap.postech.carworkshop.workorder.usecase.port.in.OpenWorkOrderCommand;
 import br.com.fiap.postech.carworkshop.workorder.usecase.port.in.WorkOrderUseCase;
 import io.quarkus.test.InjectMock;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.security.TestSecurity;
-import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.core.MediaType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
-import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.CoreMatchers.is;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 
 @QuarkusTest
 class WorkOrderControllerTest {
@@ -32,105 +34,116 @@ class WorkOrderControllerTest {
     @InjectMock
     WorkOrderUseCase useCase;
 
+    @InjectMock
+    SagaOrchestratorUseCase saga;
+
     private WorkOrderRequest workOrderRequest;
-    private WorkOrderResponse workOrderResponse;
-    private DiagnosisResponse diagnosisResponse;
-    private WorkOrderDetailResponse detailResponse;
 
     @BeforeEach
     void setUp() {
         workOrderRequest = new WorkOrderRequest();
         workOrderRequest.setCustomerId(1L);
         workOrderRequest.setVehicleId(1L);
-        workOrderRequest.setServiceIds(List.of(1L, 2L));
+        workOrderRequest.setBranchId("SP-01");
+        workOrderRequest.setComplaint("Barulho no motor");
+    }
 
-        workOrderResponse = new WorkOrderResponse(1L, 1L, 1L, StatusWO.RECEIVED, null, null, List.of(), List.of());
-        diagnosisResponse = new DiagnosisResponse(1L, StatusWO.PENDING_APPROVAL,
-                "Necessário troca de óleo e filtros", new BigDecimal("350.00"));
-        detailResponse = new WorkOrderDetailResponse(1L, 1L, 1L, StatusWO.RECEIVED, null, null, null, null, List.of(), List.of());
+    private static WorkOrder workOrderAt(StatusWO status) {
+        WorkOrder workOrder = WorkOrder.create(1L, "joao@test.com", "12345678901", 1L, "ABC-1234",
+                "SP-01", "Barulho no motor");
+        workOrder.setId(1L);
+        workOrder.setStatus(status);
+        return workOrder;
     }
 
     @Test
     @TestSecurity(user = "admin", roles = "ADMIN")
-    void testCreateWorkOrder_Success() {
-        Mockito.when(useCase.create(any(WorkOrderRequest.class))).thenReturn(workOrderResponse);
+    void createWorkOrder_passesBranchAndComplaintToTheUseCase() {
+        Mockito.when(useCase.create(any(OpenWorkOrderCommand.class))).thenReturn(workOrderAt(StatusWO.RECEIVED));
 
         given().contentType(MediaType.APPLICATION_JSON).body(workOrderRequest)
                 .when().post("/work-orders").then()
-                .statusCode(201).body("id", is(1)).body("status", is("RECEIVED"));
+                .statusCode(201).body("id", is(1)).body("status", is("RECEIVED"))
+                .body("branch_id", is("SP-01"));
 
-        Mockito.verify(useCase).create(any(WorkOrderRequest.class));
+        ArgumentCaptor<OpenWorkOrderCommand> command = ArgumentCaptor.forClass(OpenWorkOrderCommand.class);
+        Mockito.verify(useCase).create(command.capture());
+        assertEquals(new OpenWorkOrderCommand(1L, 1L, "SP-01", "Barulho no motor"), command.getValue());
     }
 
     @Test
     @TestSecurity(user = "admin", roles = "ADMIN")
-    void testCreateWorkOrder_WithoutServices() {
-        Mockito.when(useCase.create(any(WorkOrderRequest.class)))
-                .thenThrow(new ValidationException("A work order must have at least one service."));
+    void createWorkOrder_withoutBranch_isRejected() {
+        Mockito.when(useCase.create(any(OpenWorkOrderCommand.class)))
+                .thenThrow(new ValidationException("branch_id is required."));
 
-        WorkOrderRequest invalidRequest = new WorkOrderRequest();
-        invalidRequest.setCustomerId(1L);
-        invalidRequest.setVehicleId(1L);
-        invalidRequest.setServiceIds(List.of());
+        WorkOrderRequest invalid = new WorkOrderRequest();
+        invalid.setCustomerId(1L);
+        invalid.setVehicleId(1L);
+        invalid.setComplaint("Barulho no motor");
 
-        given().contentType(MediaType.APPLICATION_JSON).body(invalidRequest)
+        given().contentType(MediaType.APPLICATION_JSON).body(invalid)
                 .when().post("/work-orders").then().statusCode(400);
     }
 
     @Test
     @TestSecurity(user = "admin", roles = "ADMIN")
-    void testCompleteDiagnosis_Success() {
-        DiagnosisRequest diagnosisRequest = new DiagnosisRequest();
-        diagnosisRequest.setDiagnosticDescription("Necessário troca de óleo e filtros");
+    void createWorkOrder_withoutComplaint_isRejected() {
+        Mockito.when(useCase.create(any(OpenWorkOrderCommand.class)))
+                .thenThrow(new ValidationException("complaint is required."));
 
-        Mockito.when(useCase.completeDiagnosis(eq(1L), any(DiagnosisRequest.class))).thenReturn(diagnosisResponse);
+        WorkOrderRequest invalid = new WorkOrderRequest();
+        invalid.setCustomerId(1L);
+        invalid.setVehicleId(1L);
+        invalid.setBranchId("SP-01");
 
-        given().contentType(MediaType.APPLICATION_JSON).body(diagnosisRequest)
-                .when().post("/work-orders/1/complete-diagnosis").then()
-                .statusCode(200).body("id", is(1)).body("status", is("PENDING_APPROVAL"))
-                .body("diagnostic_description", is("Necessário troca de óleo e filtros"));
-
-        Mockito.verify(useCase).completeDiagnosis(eq(1L), any(DiagnosisRequest.class));
+        given().contentType(MediaType.APPLICATION_JSON).body(invalid)
+                .when().post("/work-orders").then().statusCode(400);
     }
 
     @Test
     @TestSecurity(user = "admin", roles = "ADMIN")
-    void testCompleteDiagnosis_WorkOrderNotFound() {
-        DiagnosisRequest diagnosisRequest = new DiagnosisRequest();
-        diagnosisRequest.setDiagnosticDescription("Teste");
+    void createWorkOrder_withAnUnknownBranch_isNotFound() {
+        Mockito.when(useCase.create(any(OpenWorkOrderCommand.class)))
+                .thenThrow(new EntityNotFoundException("Branch not found."));
 
-        Mockito.when(useCase.completeDiagnosis(eq(999L), any(DiagnosisRequest.class)))
-                .thenThrow(new EntityNotFoundException("Work Order not found."));
-
-        given().contentType(MediaType.APPLICATION_JSON).body(diagnosisRequest)
-                .when().post("/work-orders/999/complete-diagnosis").then().statusCode(404);
+        given().contentType(MediaType.APPLICATION_JSON).body(workOrderRequest)
+                .when().post("/work-orders").then().statusCode(404);
     }
 
     @Test
     @TestSecurity(user = "admin", roles = "ADMIN")
-    void testCompleteWorkOrder_Success() {
-        WorkOrderDetailResponse completed = new WorkOrderDetailResponse(1L, 1L, 1L, StatusWO.COMPLETED, null, null, null, null, List.of(), List.of());
-        Mockito.when(useCase.completeWorkOrder(1L)).thenReturn(completed);
+    void createWorkOrder_nullBody_isRejected() {
+        given().contentType(MediaType.APPLICATION_JSON).when().post("/work-orders").then().statusCode(400);
+    }
+
+    @Test
+    void createWorkOrder_withoutToken_isUnauthorized() {
+        given().contentType(MediaType.APPLICATION_JSON).body(workOrderRequest)
+                .when().post("/work-orders").then().statusCode(401);
+    }
+
+    @Test
+    @TestSecurity(user = "user", roles = "USER")
+    void createWorkOrder_withoutTheAdminRole_isForbidden() {
+        given().contentType(MediaType.APPLICATION_JSON).body(workOrderRequest)
+                .when().post("/work-orders").then().statusCode(403);
+    }
+
+    @Test
+    @TestSecurity(user = "admin", roles = "ADMIN")
+    void diagnosisAndCompletion_areGoneFromThisService() {
+        given().contentType(MediaType.APPLICATION_JSON)
+                .when().post("/work-orders/1/complete-diagnosis").then().statusCode(404);
 
         given().contentType(MediaType.APPLICATION_JSON)
-                .when().patch("/work-orders/1/complete").then()
-                .statusCode(200).body("id", is(1)).body("status", is("COMPLETED"));
-
-        Mockito.verify(useCase).completeWorkOrder(1L);
+                .when().patch("/work-orders/1/complete").then().statusCode(404);
     }
 
     @Test
     @TestSecurity(user = "admin", roles = "ADMIN")
-    void testCompleteWorkOrder_NotFound() {
-        Mockito.when(useCase.completeWorkOrder(999L)).thenThrow(new EntityNotFoundException("Work Order not found."));
-        given().contentType(MediaType.APPLICATION_JSON).when().patch("/work-orders/999/complete").then().statusCode(404);
-    }
-
-    @Test
-    @TestSecurity(user = "admin", roles = "ADMIN")
-    void testDeliverWorkOrder_Success() {
-        WorkOrderDetailResponse delivered = new WorkOrderDetailResponse(1L, 1L, 1L, StatusWO.DELIVERED, null, null, null, null, List.of(), List.of());
-        Mockito.when(useCase.deliverWorkOrder(1L)).thenReturn(delivered);
+    void deliverWorkOrder_isAccepted() {
+        Mockito.when(useCase.deliverWorkOrder(1L)).thenReturn(workOrderAt(StatusWO.DELIVERED));
 
         given().contentType(MediaType.APPLICATION_JSON)
                 .when().patch("/work-orders/1/deliver").then()
@@ -141,42 +154,41 @@ class WorkOrderControllerTest {
 
     @Test
     @TestSecurity(user = "admin", roles = "ADMIN")
-    void testDeliverWorkOrder_NotFound() {
+    void deliverWorkOrder_notFound() {
         Mockito.when(useCase.deliverWorkOrder(999L)).thenThrow(new EntityNotFoundException("Work Order not found."));
-        given().contentType(MediaType.APPLICATION_JSON).when().patch("/work-orders/999/deliver").then().statusCode(404);
-    }
 
-    @Test
-    void testCreateWorkOrder_Unauthorized() {
-        given().contentType(MediaType.APPLICATION_JSON).body(workOrderRequest)
-                .when().post("/work-orders").then().statusCode(401);
-    }
-
-    @Test
-    @TestSecurity(user = "user", roles = "USER")
-    void testCreateWorkOrder_Forbidden() {
-        given().contentType(MediaType.APPLICATION_JSON).body(workOrderRequest)
-                .when().post("/work-orders").then().statusCode(403);
+        given().contentType(MediaType.APPLICATION_JSON)
+                .when().patch("/work-orders/999/deliver").then().statusCode(404);
     }
 
     @Test
     @TestSecurity(user = "admin", roles = "ADMIN")
-    void testGetAllWorkOrders_Success() {
-        WorkOrderDetailResponse detail = new WorkOrderDetailResponse(1L, 1L, 1L, StatusWO.RECEIVED, null, null, null, null, List.of(), List.of());
-        Mockito.when(useCase.findAll()).thenReturn(List.of(detail));
+    void findAll_listsTheWorkOrders() {
+        Mockito.when(useCase.findAll()).thenReturn(List.of(workOrderAt(StatusWO.RECEIVED)));
 
         given().when().get("/work-orders").then()
                 .statusCode(200).body("size()", is(1))
-                .body("[0].id", is(1)).body("[0].status", is("RECEIVED"));
+                .body("[0].id", is(1)).body("[0].status", is("RECEIVED"))
+                .body("[0].complaint", is("Barulho no motor"));
 
         Mockito.verify(useCase).findAll();
     }
 
     @Test
     @TestSecurity(user = "admin", roles = "ADMIN")
-    void testGetWorkOrderById_Success() {
-        WorkOrderDetailResponse detail = new WorkOrderDetailResponse(1L, 1L, 1L, StatusWO.IN_PROGRESS, null, null, null, null, List.of(), List.of());
-        Mockito.when(useCase.findById(1L)).thenReturn(detail);
+    void findAllActive_listsTheWorkOrders() {
+        Mockito.when(useCase.findAllActive()).thenReturn(List.of(workOrderAt(StatusWO.AWAITING_PAYMENT)));
+
+        given().when().get("/work-orders/active").then()
+                .statusCode(200).body("[0].status", is("AWAITING_PAYMENT"));
+
+        Mockito.verify(useCase).findAllActive();
+    }
+
+    @Test
+    @TestSecurity(user = "admin", roles = "ADMIN")
+    void findById_returnsTheWorkOrder() {
+        Mockito.when(useCase.findById(1L)).thenReturn(workOrderAt(StatusWO.IN_PROGRESS));
 
         given().when().get("/work-orders/1").then()
                 .statusCode(200).body("id", is(1)).body("status", is("IN_PROGRESS"));
@@ -186,26 +198,91 @@ class WorkOrderControllerTest {
 
     @Test
     @TestSecurity(user = "admin", roles = "ADMIN")
-    void testGetWorkOrderById_NotFound() {
+    void findById_notFound() {
         Mockito.when(useCase.findById(999L)).thenThrow(new EntityNotFoundException("Work Order not found."));
+
         given().when().get("/work-orders/999").then().statusCode(404);
     }
 
     @Test
     @TestSecurity(user = "admin", roles = "ADMIN")
-    void testCreateWorkOrder_NullBody_Returns400() {
-        given().contentType(MediaType.APPLICATION_JSON).when().post("/work-orders").then().statusCode(400);
+    void deleteWorkOrder_returnsNoContent() {
+        given().when().delete("/work-orders/1").then().statusCode(204);
+
+        Mockito.verify(useCase).deleteWorkOrder(1L);
     }
 
     @Test
     @TestSecurity(user = "admin", roles = "ADMIN")
-    void testCompleteDiagnosis_NullBody_Returns400() {
-        given().contentType(MediaType.APPLICATION_JSON).when().post("/work-orders/1/complete-diagnosis").then().statusCode(400);
+    void cancel_undoesTheSagaAndReturnsTheCanceledWorkOrder() {
+        WorkOrder canceled = workOrderAt(StatusWO.CANCELED);
+        canceled.setCancelReason(CancelReason.CANCELED_BY_STAFF);
+        Mockito.when(useCase.findById(1L)).thenReturn(canceled);
+
+        given().contentType(MediaType.APPLICATION_JSON)
+                .when().post("/work-orders/1/cancel").then()
+                .statusCode(200).body("status", is("CANCELED"))
+                .body("cancel_reason", is("CANCELED_BY_STAFF"));
+
+        Mockito.verify(saga).cancel(1L, CancelReason.CANCELED_BY_STAFF);
     }
 
     @Test
     @TestSecurity(user = "admin", roles = "ADMIN")
-    void testGetAverageCompletionTime_Success() {
+    void cancel_afterThePivot_isAConflict() {
+        Mockito.doThrow(new ConflictException(
+                        "The repair is already complete: this saga can no longer be compensated."))
+                .when(saga).cancel(1L, CancelReason.CANCELED_BY_STAFF);
+
+        given().contentType(MediaType.APPLICATION_JSON)
+                .when().post("/work-orders/1/cancel").then().statusCode(409);
+
+        Mockito.verify(useCase, Mockito.never()).findById(Mockito.anyLong());
+    }
+
+    @Test
+    @TestSecurity(user = "admin", roles = "ADMIN")
+    void cancel_forAWorkOrderWithoutASaga_isNotFound() {
+        Mockito.doThrow(new EntityNotFoundException("No saga for Work Order 999."))
+                .when(saga).cancel(999L, CancelReason.CANCELED_BY_STAFF);
+
+        given().contentType(MediaType.APPLICATION_JSON)
+                .when().post("/work-orders/999/cancel").then().statusCode(404);
+    }
+
+    @Test
+    void cancel_withoutToken_isUnauthorized() {
+        given().contentType(MediaType.APPLICATION_JSON)
+                .when().post("/work-orders/1/cancel").then().statusCode(401);
+    }
+
+    @Test
+    @TestSecurity(user = "customer", roles = "CUSTOMER")
+    void cancel_withoutTheAdminRole_isForbidden() {
+        given().contentType(MediaType.APPLICATION_JSON)
+                .when().post("/work-orders/1/cancel").then().statusCode(403);
+
+        Mockito.verify(saga, Mockito.never()).cancel(Mockito.anyLong(), Mockito.any());
+    }
+
+    @Test
+    @TestSecurity(user = "admin", roles = "ADMIN")
+    void history_listsEveryTransition() {
+        Mockito.when(useCase.historyOf(1L)).thenReturn(List.of(
+                new WorkOrderStatusChange(1L, "SP-01", StatusWO.RECEIVED, null, null, Instant.now()),
+                new WorkOrderStatusChange(1L, "SP-01", StatusWO.CANCELED,
+                        CancelReason.CANCELED_BY_STAFF, null, Instant.now())));
+
+        given().when().get("/work-orders/1/history").then()
+                .statusCode(200).body("size()", is(2))
+                .body("[0].status", is("RECEIVED"))
+                .body("[1].status", is("CANCELED"))
+                .body("[1].reason", is("CANCELED_BY_STAFF"));
+    }
+
+    @Test
+    @TestSecurity(user = "admin", roles = "ADMIN")
+    void getAverageCompletionTime_returnsTheAverage() {
         Mockito.when(useCase.getAverageCompletionTimeInHours()).thenReturn(4.5);
 
         given().when().get("/work-orders/stats/average-completion-time").then()

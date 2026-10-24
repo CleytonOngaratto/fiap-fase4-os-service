@@ -46,6 +46,7 @@ public class InventoryInteractor implements InventoryUseCase {
                 .price(request.price())
                 .type(request.type())
                 .quantity(request.quantity())
+                .reservedQuantity(0)
                 .build();
         return PartsAndSupplyResponse.from(repository.save(part));
     }
@@ -62,7 +63,7 @@ public class InventoryInteractor implements InventoryUseCase {
         existing.setDescription(request.description());
         existing.setPrice(request.price());
         existing.setType(request.type());
-        existing.setQuantity(request.quantity());
+        existing.changeStock(request.quantity());
         repository.save(existing);
     }
 
@@ -86,6 +87,44 @@ public class InventoryInteractor implements InventoryUseCase {
                 .orElseThrow(() -> new EntityNotFoundException("Part or Supply not found."));
         part.consumeStock(quantity);
         repository.save(part);
+    }
+
+    @Override
+    public void reserve(Long id, int quantity) {
+        PartsAndSupply part = requirePart(id);
+        part.reserve(quantity);
+        repository.save(part);
+        log.info("Reserved {} unit(s) of part {}.", quantity, id);
+    }
+
+    @Override
+    public void confirmReservation(Long id, int quantity) {
+        PartsAndSupply part = requirePart(id);
+        part.confirmReservation(quantity);
+        repository.save(part);
+        log.info("Confirmed the reservation of {} unit(s) of part {}.", quantity, id);
+    }
+
+    @Override
+    public void releaseReservation(Long id, int quantity) {
+        PartsAndSupply part = requirePart(id);
+        part.releaseReservation(quantity);
+        repository.save(part);
+        log.info("Released the reservation of {} unit(s) of part {}.", quantity, id);
+    }
+
+    @Override
+    public void restore(Long id, int quantity) {
+        PartsAndSupply part = requirePart(id);
+        part.restore(quantity);
+        repository.save(part);
+        log.info("Restored {} unit(s) of part {} to stock.", quantity, id);
+    }
+
+    private PartsAndSupply requirePart(Long id) {
+        validateId(id);
+        return repository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Part or Supply not found."));
     }
 
     private void validateId(Long id) {

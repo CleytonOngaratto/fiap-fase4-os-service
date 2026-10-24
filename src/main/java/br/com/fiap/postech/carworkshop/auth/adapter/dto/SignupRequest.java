@@ -1,7 +1,4 @@
 package br.com.fiap.postech.carworkshop.auth.adapter.dto;
 
-import br.com.fiap.postech.carworkshop.auth.domain.entity.UserRoles;
-
-import java.util.List;
-
-public record SignupRequest(String username, String password, List<UserRoles> roles) {}
+// Sem roles: o papel e decidido no servidor. Aceitar a lista do cliente deixava qualquer um criar um ADMIN.
+public record SignupRequest(String username, String password) {}

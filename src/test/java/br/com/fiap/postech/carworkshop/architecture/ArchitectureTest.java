@@ -60,6 +60,31 @@ class ArchitectureTest {
     }
 
     @Test
+    void saga_domain_and_usecase_do_not_know_the_other_modules() {
+        noClasses()
+                .that().resideInAnyPackage("..saga.domain..", "..saga.usecase..")
+                .should().dependOnClassesThat().resideInAnyPackage(
+                        "..workorder..", "..inventory..", "..customer..",
+                        "..vehicle..", "..autoservice..", "..branch..", "..auth..")
+                .as("the orchestrator talks to the other modules only through its own ports")
+                .check(productionClasses);
+    }
+
+    @Test
+    void saga_gateways_do_not_reach_other_modules_infrastructure() {
+        noClasses()
+                .that().resideInAPackage("..saga.adapter.gateway..")
+                .should().dependOnClassesThat().resideInAnyPackage(
+                        "..workorder.infrastructure..",
+                        "..customer.infrastructure..",
+                        "..vehicle.infrastructure..",
+                        "..autoservice.infrastructure..",
+                        "..inventory.infrastructure..")
+                .as("saga gateways must depend on other modules' public ports, not their infrastructure")
+                .check(productionClasses);
+    }
+
+    @Test
     void workorder_gateways_do_not_reach_other_modules_infrastructure() {
         noClasses()
                 .that().resideInAPackage("..workorder.adapter.gateway..")

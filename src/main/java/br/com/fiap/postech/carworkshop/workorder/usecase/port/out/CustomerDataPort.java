@@ -5,5 +5,5 @@ import java.util.Optional;
 public interface CustomerDataPort {
     Optional<CustomerInfo> findById(Long id);
 
-    record CustomerInfo(Long id, String email) {}
+    record CustomerInfo(Long id, String email, String document) {}
 }

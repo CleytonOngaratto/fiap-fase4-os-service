@@ -1,7 +1,7 @@
 package br.com.fiap.postech.carworkshop.auth.usecase.interactor;
 
 import br.com.fiap.postech.carworkshop.auth.adapter.dto.LoginRequest;
-import br.com.fiap.postech.carworkshop.auth.adapter.dto.SignupRequest;
+import br.com.fiap.postech.carworkshop.auth.usecase.port.in.RegisterAdminCommand;
 import br.com.fiap.postech.carworkshop.auth.adapter.presenter.UserResponse;
 import br.com.fiap.postech.carworkshop.auth.domain.entity.User;
 import br.com.fiap.postech.carworkshop.auth.domain.entity.UserRoles;
@@ -63,28 +63,29 @@ class AuthInteractorUserTest {
     @Test
     void signup_nullPassword_throwsValidation() {
         assertThrows(ValidationException.class,
-                () -> interactor.signup(new SignupRequest("admin", null, List.of(UserRoles.ADMIN))));
+                () -> interactor.signup(new RegisterAdminCommand("admin", null, true)));
         verifyNoInteractions(userRepository);
     }
 
     @Test
     void signup_emptyUsername_throwsValidation() {
         assertThrows(ValidationException.class,
-                () -> interactor.signup(new SignupRequest("", "password", List.of(UserRoles.ADMIN))));
+                () -> interactor.signup(new RegisterAdminCommand("", "password", true)));
         verifyNoInteractions(userRepository);
     }
 
     @Test
     void save_persistsNewUser() {
+        when(userRepository.hasAnyUser()).thenReturn(true);
         when(userRepository.findByUsername("newuser")).thenReturn(Optional.empty());
         when(security.generateSalt()).thenReturn("salt");
         when(security.hashPassword(anyString(), anyString(), anyString())).thenReturn("hash");
-        User saved = User.builder().id(1L).username("newuser").roles(List.of(UserRoles.USER)).build();
+        User saved = User.builder().id(1L).username("newuser").roles(List.of(UserRoles.ADMIN)).build();
         when(userRepository.save(any(User.class))).thenReturn(saved);
 
-        UserResponse result = interactor.signup(new SignupRequest("newuser", "password", List.of(UserRoles.USER)));
+        User result = interactor.signup(new RegisterAdminCommand("newuser", "password", true));
         assertNotNull(result);
-        assertEquals("newuser", result.username());
+        assertEquals("newuser", result.getUsername());
         verify(userRepository).save(any(User.class));
     }
 }

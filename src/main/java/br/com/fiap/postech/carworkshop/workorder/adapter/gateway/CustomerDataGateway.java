@@ -16,6 +16,7 @@ public class CustomerDataGateway implements CustomerDataPort {
     @Override
     public Optional<CustomerInfo> findById(Long id) {
         return customerRepository.findById(id)
-                .map(customer -> new CustomerInfo(customer.getId(), customer.getEmail()));
+                .map(customer -> new CustomerInfo(
+                        customer.getId(), customer.getEmail(), customer.getDocument()));
     }
 }

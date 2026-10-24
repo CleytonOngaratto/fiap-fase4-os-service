@@ -36,7 +36,7 @@ class PartsAndSupplyControllerTest {
     @BeforeEach
     void setUp() {
         response = new PartsAndSupplyResponse(1L, "P001", "Bosch", "Oil Filter",
-                new BigDecimal("35.90"), TypeProductEnum.UNITARY, 10);
+                new BigDecimal("35.90"), TypeProductEnum.UNITARY, 10, 2, 8);
         request = new PartsAndSupplyRequest("P001", "Bosch", "Oil Filter",
                 new BigDecimal("35.90"), TypeProductEnum.UNITARY, 10);
     }

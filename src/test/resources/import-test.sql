@@ -6,15 +6,20 @@ VALUES (2, 'Alinhamento', 199.99);
 
 ALTER SEQUENCE auto_service_seq RESTART WITH 3;
 
-INSERT INTO public.parts_and_supply(id, code, manufacturer, description, price, type, quantity)
-VALUES (1, 'P001', 'Bosch', 'Filtro de óleo', 35.90, 'UNITARY', 10);
-INSERT INTO public.parts_and_supply(id, code, manufacturer, description, price, type, quantity)
-VALUES (2, 'P002', 'Valeo', 'Pastilha de freio', 120.00, 'UNITARY', 5);
-INSERT INTO public.parts_and_supply(id, code, manufacturer, description, price, type, quantity)
-VALUES (3, 'P003', 'Mahle', 'Filtro de ar', 40.00, 'UNITARY', 4);
+INSERT INTO public.parts_and_supply(id, code, manufacturer, description, price, type, quantity, reserved_quantity)
+VALUES (1, 'P001', 'Bosch', 'Filtro de óleo', 35.90, 'UNITARY', 10, 0);
+INSERT INTO public.parts_and_supply(id, code, manufacturer, description, price, type, quantity, reserved_quantity)
+VALUES (2, 'P002', 'Valeo', 'Pastilha de freio', 120.00, 'UNITARY', 5, 0);
+INSERT INTO public.parts_and_supply(id, code, manufacturer, description, price, type, quantity, reserved_quantity)
+VALUES (3, 'P003', 'Mahle', 'Filtro de ar', 40.00, 'UNITARY', 4, 0);
 
 ALTER SEQUENCE auto_service_SEQ RESTART WITH 3;
 ALTER SEQUENCE parts_and_supply_SEQ RESTART WITH 4;
+
+INSERT INTO branches (id, name, city)
+VALUES ('SP-01', 'Unidade Paulista', 'Sao Paulo');
+INSERT INTO branches (id, name, city)
+VALUES ('RJ-01', 'Unidade Barra', 'Rio de Janeiro');
 
 INSERT INTO customers (id, name, document, rg, email, number)
 VALUES (1, 'John Silva', '12345678901', 'MG123456789', 'john.silva@email.com', '11987654321');

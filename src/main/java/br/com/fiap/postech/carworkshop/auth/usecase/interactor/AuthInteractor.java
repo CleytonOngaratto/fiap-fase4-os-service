@@ -1,17 +1,22 @@
 package br.com.fiap.postech.carworkshop.auth.usecase.interactor;
 
 import br.com.fiap.postech.carworkshop.auth.adapter.dto.LoginRequest;
-import br.com.fiap.postech.carworkshop.auth.adapter.dto.SignupRequest;
 import br.com.fiap.postech.carworkshop.auth.adapter.presenter.AuthTokenResponse;
-import br.com.fiap.postech.carworkshop.auth.adapter.presenter.UserResponse;
 import br.com.fiap.postech.carworkshop.auth.domain.entity.User;
+import br.com.fiap.postech.carworkshop.auth.domain.entity.UserRoles;
 import br.com.fiap.postech.carworkshop.auth.usecase.port.in.AuthUseCase;
+import br.com.fiap.postech.carworkshop.auth.usecase.port.in.RegisterAdminCommand;
 import br.com.fiap.postech.carworkshop.auth.usecase.port.out.SecurityPort;
 import br.com.fiap.postech.carworkshop.auth.usecase.port.out.TokenProviderPort;
 import br.com.fiap.postech.carworkshop.auth.usecase.port.out.UserRepositoryPort;
 import br.com.fiap.postech.carworkshop.shared.domain.exception.EntityNotFoundException;
+import br.com.fiap.postech.carworkshop.shared.domain.exception.ForbiddenException;
 import br.com.fiap.postech.carworkshop.shared.domain.exception.ValidationException;
+import lombok.extern.slf4j.Slf4j;
 
+import java.util.List;
+
+@Slf4j
 public class AuthInteractor implements AuthUseCase {
 
     private final UserRepositoryPort userRepository;
@@ -27,31 +32,36 @@ public class AuthInteractor implements AuthUseCase {
     }
 
     @Override
-    public UserResponse signup(SignupRequest request) {
-        if (request.username() == null || request.username().isBlank()) {
+    public User signup(RegisterAdminCommand command) {
+        if (command.username() == null || command.username().isBlank()) {
             throw new ValidationException("Username must not be blank.");
         }
-        if (request.password() == null || request.password().isBlank()) {
+        if (command.password() == null || command.password().isBlank()) {
             throw new ValidationException("Password must not be blank.");
         }
-        if (request.roles() == null || request.roles().isEmpty()) {
-            throw new ValidationException("At least one role is required.");
+
+        // Excecao de primeiro acesso: com a tabela vazia nao existe ADMIN para autorizar a criacao do
+        // primeiro. A partir do segundo usuario, so um ADMIN cria outro.
+        boolean bootstrap = !userRepository.hasAnyUser();
+        if (!bootstrap && !command.requesterIsAdmin()) {
+            throw new ForbiddenException("Only an administrator can create a user.");
         }
-        userRepository.findByUsername(request.username())
+        if (bootstrap) {
+            log.warn("Creating the first administrator ({}): the user table was empty.", command.username());
+        }
+
+        userRepository.findByUsername(command.username())
                 .ifPresent(u -> { throw new ValidationException("Username already exists."); });
 
         String salt = security.generateSalt();
-        String hashedPassword = security.hashPassword(request.username(), request.password(), salt);
+        String hashedPassword = security.hashPassword(command.username(), command.password(), salt);
 
-        User user = User.builder()
-                .username(request.username())
+        return userRepository.save(User.builder()
+                .username(command.username())
                 .password(hashedPassword)
                 .salt(salt)
-                .roles(request.roles())
-                .build();
-
-        User saved = userRepository.save(user);
-        return UserResponse.from(saved);
+                .roles(List.of(UserRoles.ADMIN))
+                .build());
     }
 
     @Override

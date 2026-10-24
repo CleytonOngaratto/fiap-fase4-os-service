@@ -96,13 +96,14 @@ consumidor já sabe tratar, porque é *tolerant reader* por contrato.
 
 | Campo | Entra quando | Até lá |
 |---|---|---|
-| `branchId` | a abertura da OS passar a receber a filial | ausente do envelope |
-| `complaint` (no `StartDiagnosis`) | a abertura passar a receber o relato do problema | ausente do `payload`; o `vehiclePlate` sai da própria OS |
+| ~~`branchId`~~ | ✅ **entra desde o bloco do domínio do OS**: a abertura recebe a filial, e todo comando do orquestrador a carrega no envelope | — |
+| ~~`complaint`~~ | ✅ **entra desde o bloco do domínio do OS**, no `payload` do `StartDiagnosis` | — |
+| `branchId` **na resposta** | o Execution e o Billing passarem a devolvê-lo nos eventos deles | ausente do envelope **no sentido participante → orquestrador**; o orquestrador não depende dele, porque já conhece a filial da saga |
 | `mechanic` (no `DiagnosisStarted`) | o Execution tiver mecânicos e fila por filial | ausente do `payload` |
 
-**`sagaId` antes da tabela da saga.** O `sagaId` já viaja em todas as mensagens, gerado na abertura da OS e
-devolvido pelos participantes na resposta — mas a tabela `saga_instance` só existe a partir do bloco do
-orquestrador. Até lá ele serve para **correlacionar os logs** de uma mesma saga, não para recuperar estado.
+**`sagaId`.** Gerado quando a saga nasce, junto com a abertura da OS, e devolvido pelos participantes em cada
+resposta. Desde o bloco do orquestrador ele é a chave de `saga_instance`: além de correlacionar os logs, é por
+ele que se recupera em que passo o processo está e o que falta compensar.
 
 ---
 

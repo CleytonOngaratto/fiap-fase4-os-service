@@ -1,10 +1,12 @@
 package br.com.fiap.postech.carworkshop.workorder.adapter.controller;
 
-import br.com.fiap.postech.carworkshop.workorder.adapter.dto.DiagnosisRequest;
+import br.com.fiap.postech.carworkshop.saga.usecase.port.in.SagaOrchestratorUseCase;
+import br.com.fiap.postech.carworkshop.shared.domain.CancelReason;
 import br.com.fiap.postech.carworkshop.workorder.adapter.dto.WorkOrderRequest;
-import br.com.fiap.postech.carworkshop.workorder.adapter.presenter.DiagnosisResponse;
 import br.com.fiap.postech.carworkshop.workorder.adapter.presenter.WorkOrderDetailResponse;
 import br.com.fiap.postech.carworkshop.workorder.adapter.presenter.WorkOrderResponse;
+import br.com.fiap.postech.carworkshop.workorder.adapter.presenter.WorkOrderStatusChangeResponse;
+import br.com.fiap.postech.carworkshop.workorder.usecase.port.in.OpenWorkOrderCommand;
 import br.com.fiap.postech.carworkshop.workorder.usecase.port.in.WorkOrderUseCase;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
@@ -28,20 +30,25 @@ public class WorkOrderController {
     @Inject
     WorkOrderUseCase useCase;
 
+    @Inject
+    SagaOrchestratorUseCase saga;
+
     @GET
     @RolesAllowed("ADMIN")
     @Operation(summary = "List all work orders (including deleted)")
     public Response findAll() {
-        List<WorkOrderDetailResponse> workOrders = useCase.findAll();
+        List<WorkOrderDetailResponse> workOrders = useCase.findAll().stream()
+                .map(WorkOrderDetailResponse::from).toList();
         return Response.ok(workOrders).build();
     }
 
     @GET
     @RolesAllowed("ADMIN")
     @Path("/active")
-    @Operation(summary = "List active work orders ordered by priority (Execution > Approval > Diagnosis > Received)")
+    @Operation(summary = "List active work orders ordered by priority")
     public Response findAllActive() {
-        List<WorkOrderDetailResponse> workOrders = useCase.findAllActive();
+        List<WorkOrderDetailResponse> workOrders = useCase.findAllActive().stream()
+                .map(WorkOrderDetailResponse::from).toList();
         return Response.ok(workOrders).build();
     }
 
@@ -50,8 +57,7 @@ public class WorkOrderController {
     @Path("/{id}")
     @Operation(summary = "Get work order by ID")
     public Response findById(@Parameter(description = "Work order ID") @PathParam("id") Long id) {
-        WorkOrderDetailResponse workOrder = useCase.findById(id);
-        return Response.ok(workOrder).build();
+        return Response.ok(WorkOrderDetailResponse.from(useCase.findById(id))).build();
     }
 
     @GET
@@ -64,34 +70,36 @@ public class WorkOrderController {
 
     @POST
     @RolesAllowed("ADMIN")
-    @Operation(summary = "Create a new work order")
+    @Operation(summary = "Open a work order for a customer vehicle at a branch")
     // A transacao vive aqui porque o interactor e produzido por @Produces (instancia criada com new, que o CDI
     // nao intercepta): sem este @Transactional, a OS e a linha do outbox comitariam separadas.
     @Transactional
     public Response create(WorkOrderRequest request) {
         if (request == null) throw new BadRequestException("Request body is required.");
-        WorkOrderResponse created = useCase.create(request);
+        WorkOrderResponse created = WorkOrderResponse.from(useCase.create(new OpenWorkOrderCommand(
+                request.getCustomerId(), request.getVehicleId(),
+                request.getBranchId(), request.getComplaint())));
         return Response.status(Response.Status.CREATED).entity(created).build();
+    }
+
+    @GET
+    @RolesAllowed("ADMIN")
+    @Path("/{id}/history")
+    @Operation(summary = "List every status transition of a work order")
+    public Response history(@Parameter(description = "Work order ID") @PathParam("id") Long id) {
+        List<WorkOrderStatusChangeResponse> history = useCase.historyOf(id).stream()
+                .map(WorkOrderStatusChangeResponse::from).toList();
+        return Response.ok(history).build();
     }
 
     @POST
     @RolesAllowed("ADMIN")
-    @Path("/{id}/complete-diagnosis")
-    @Operation(summary = "Complete diagnosis and generate budget")
-    public Response completeDiagnosis(@Parameter(description = "Work order ID") @PathParam("id") Long id,
-                                       DiagnosisRequest request) {
-        if (request == null) throw new BadRequestException("Request body is required.");
-        DiagnosisResponse updated = useCase.completeDiagnosis(id, request);
-        return Response.ok(updated).build();
-    }
-
-    @PATCH
-    @RolesAllowed("ADMIN")
-    @Path("/{id}/complete")
-    @Operation(summary = "Mark work order as completed")
-    public Response completeWorkOrder(@Parameter(description = "Work order ID") @PathParam("id") Long id) {
-        WorkOrderDetailResponse updated = useCase.completeWorkOrder(id);
-        return Response.ok(updated).build();
+    @Path("/{id}/cancel")
+    @Operation(summary = "Cancel a work order, undoing whatever the saga already did")
+    @Transactional
+    public Response cancel(@Parameter(description = "Work order ID") @PathParam("id") Long id) {
+        saga.cancel(id, CancelReason.CANCELED_BY_STAFF);
+        return Response.ok(WorkOrderDetailResponse.from(useCase.findById(id))).build();
     }
 
     @PATCH
@@ -99,8 +107,7 @@ public class WorkOrderController {
     @Path("/{id}/deliver")
     @Operation(summary = "Mark vehicle as delivered")
     public Response deliverWorkOrder(@Parameter(description = "Work order ID") @PathParam("id") Long id) {
-        WorkOrderDetailResponse updated = useCase.deliverWorkOrder(id);
-        return Response.ok(updated).build();
+        return Response.ok(WorkOrderDetailResponse.from(useCase.deliverWorkOrder(id))).build();
     }
 
     @DELETE

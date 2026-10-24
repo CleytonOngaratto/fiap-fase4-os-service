@@ -2,6 +2,8 @@ package br.com.fiap.postech.carworkshop.workorder.domain.entity;
 
 import br.com.fiap.postech.carworkshop.autoservice.domain.entity.AutoService;
 import br.com.fiap.postech.carworkshop.inventory.domain.entity.PartsAndSupply;
+import br.com.fiap.postech.carworkshop.shared.domain.CancelReason;
+import br.com.fiap.postech.carworkshop.shared.domain.exception.ConflictException;
 import br.com.fiap.postech.carworkshop.shared.domain.exception.InvalidOperationException;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -23,35 +25,43 @@ public class WorkOrder {
     private Long id;
     private Long customerId;
     private String customerEmail;
+    private String customerDocument;
     private Long vehicleId;
     private String vehiclePlate;
+    private String branchId;
+    private String complaint;
     private StatusWO status;
     private LocalDateTime creationDate;
     private LocalDateTime endDate;
     private String diagnosticDescription;
     private BigDecimal budgetValue;
     private LocalDateTime budgetApprovalDate;
+    private CancelReason cancelReason;
     private List<AutoService> services;
     private List<PartsAndSupply> parts;
     private boolean deleted;
 
-    public static WorkOrder create(Long customerId, String customerEmail,
+    public static WorkOrder create(Long customerId, String customerEmail, String customerDocument,
                                    Long vehicleId, String vehiclePlate,
-                                   List<AutoService> services, List<PartsAndSupply> parts) {
+                                   String branchId, String complaint) {
         return WorkOrder.builder()
                 .customerId(customerId)
                 .customerEmail(customerEmail)
+                .customerDocument(customerDocument)
                 .vehicleId(vehicleId)
                 .vehiclePlate(vehiclePlate)
-                .services(services)
-                .parts(parts != null ? parts : List.of())
+                .branchId(branchId)
+                .complaint(complaint)
+                .services(List.of())
+                .parts(List.of())
                 .status(StatusWO.RECEIVED)
                 .creationDate(LocalDateTime.now())
                 .build();
     }
 
-    // Idempotente de proposito, diferente dos comandos abaixo: a resposta da saga pode ser reentregue, e
-    // lancar aqui mandaria toda duplicata para a DLQ.
+    // As transicoes dirigidas pela saga devolvem boolean em vez de lancar: a resposta de um participante pode
+    // ser reentregue, e lancar mandaria toda duplicata para a DLQ. As dirigidas por pessoa (entrega, exclusao)
+    // lancam, porque quem chamou precisa do erro.
     public boolean startDiagnosis() {
         if (this.status != StatusWO.RECEIVED) {
             return false;
@@ -60,41 +70,68 @@ public class WorkOrder {
         return true;
     }
 
-    public void generateBudget() {
-        BigDecimal total = BigDecimal.ZERO;
-        for (AutoService service : this.services) {
-            total = total.add(service.getPrice());
+    public boolean priceDiagnosis(String description, List<AutoService> services,
+                                  List<PartsAndSupply> parts, BigDecimal total) {
+        if (this.status != StatusWO.UNDER_DIAGNOSIS || this.budgetValue != null) {
+            return false;
         }
-        if (this.parts != null) {
-            for (PartsAndSupply part : this.parts) {
-                total = total.add(part.getPrice());
-            }
-        }
+        this.diagnosticDescription = description;
+        this.services = services != null ? services : List.of();
+        this.parts = parts != null ? parts : List.of();
         this.budgetValue = total;
-        this.status = StatusWO.PENDING_APPROVAL;
+        return true;
     }
 
-    public void approveBudget() {
+    public boolean pendApproval() {
+        if (this.status != StatusWO.UNDER_DIAGNOSIS) {
+            return false;
+        }
+        this.status = StatusWO.PENDING_APPROVAL;
+        return true;
+    }
+
+    public boolean awaitPayment() {
         if (this.status != StatusWO.PENDING_APPROVAL) {
-            throw new InvalidOperationException("Budget can only be approved when status is PENDING_APPROVAL.");
+            return false;
+        }
+        this.status = StatusWO.AWAITING_PAYMENT;
+        this.budgetApprovalDate = LocalDateTime.now();
+        return true;
+    }
+
+    public boolean startRepair() {
+        if (this.status != StatusWO.AWAITING_PAYMENT) {
+            return false;
         }
         this.status = StatusWO.IN_PROGRESS;
-        this.budgetApprovalDate = LocalDateTime.now();
+        return true;
     }
 
-    public void rejectBudget() {
-        if (this.status != StatusWO.PENDING_APPROVAL) {
-            throw new InvalidOperationException("Budget can only be rejected when status is PENDING_APPROVAL.");
-        }
-        this.status = StatusWO.CANCELED;
-    }
-
-    public void completeService() {
+    public boolean completeService() {
         if (this.status != StatusWO.IN_PROGRESS) {
-            throw new InvalidOperationException("Work order can only be completed when status is IN_PROGRESS.");
+            return false;
         }
         this.status = StatusWO.COMPLETED;
         this.endDate = LocalDateTime.now();
+        return true;
+    }
+
+    public boolean cancel(CancelReason reason) {
+        if (this.status == StatusWO.CANCELED) {
+            return false;
+        }
+        if (isPastPivot()) {
+            throw new ConflictException(
+                    "Work order can no longer be canceled: the repair is already " + this.status + ".");
+        }
+        this.status = StatusWO.CANCELED;
+        this.cancelReason = reason;
+        this.endDate = LocalDateTime.now();
+        return true;
+    }
+
+    public boolean isPastPivot() {
+        return this.status == StatusWO.COMPLETED || this.status == StatusWO.DELIVERED;
     }
 
     public void deliverVehicle() {
@@ -109,5 +146,9 @@ public class WorkOrder {
             throw new InvalidOperationException("Only COMPLETED or DELIVERED work orders can be deleted.");
         }
         this.deleted = true;
+    }
+
+    public boolean isOwnedBy(String document) {
+        return this.customerDocument != null && this.customerDocument.equals(document);
     }
 }

@@ -34,4 +34,8 @@ public class PartsAndSupplyJpaEntity extends PanacheEntityBase {
     private TypeProductEnum type;
 
     private Integer quantity;
+
+    @Column(name = "reserved_quantity", nullable = false)
+    @Builder.Default
+    private Integer reservedQuantity = 0;
 }
