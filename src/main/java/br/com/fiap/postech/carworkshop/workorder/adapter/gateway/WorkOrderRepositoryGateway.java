@@ -32,6 +32,7 @@ public class WorkOrderRepositoryGateway implements WorkOrderRepositoryPort {
             existing.setBudgetValue(workOrder.getBudgetValue());
             existing.setBudgetApprovalDate(workOrder.getBudgetApprovalDate());
             existing.setEndDate(workOrder.getEndDate());
+            existing.setCancelReason(workOrder.getCancelReason());
             existing.setDeleted(workOrder.isDeleted());
             // Os itens chegam no diagnostico, depois da criacao: sem copiar as colecoes aqui, o total
             // persiste e o snapshot precificado nao, e a reserva de estoque nao encontra peca nenhuma.
