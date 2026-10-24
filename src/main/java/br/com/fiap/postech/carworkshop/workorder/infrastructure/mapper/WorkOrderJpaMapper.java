@@ -9,6 +9,8 @@ import br.com.fiap.postech.carworkshop.workorder.infrastructure.persistence.Work
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
 
+import java.util.List;
+
 @Mapper(componentModel = "jakarta")
 public interface WorkOrderJpaMapper {
 
@@ -22,9 +24,13 @@ public interface WorkOrderJpaMapper {
     @Mapping(target = "autoServiceId", source = "id")
     WorkOrderServiceSnapshot toServiceSnapshot(AutoService service);
 
+    List<WorkOrderServiceSnapshot> toServiceSnapshots(List<AutoService> services);
+
     @Mapping(target = "id", source = "partsAndSupplyId")
     PartsAndSupply partToDomain(WorkOrderPartSnapshot snapshot);
 
     @Mapping(target = "partsAndSupplyId", source = "id")
     WorkOrderPartSnapshot toPartSnapshot(PartsAndSupply part);
+
+    List<WorkOrderPartSnapshot> toPartSnapshots(List<PartsAndSupply> parts);
 }
