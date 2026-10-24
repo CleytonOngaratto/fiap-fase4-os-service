@@ -106,6 +106,7 @@ public class WorkOrderController {
     @RolesAllowed("ADMIN")
     @Path("/{id}/deliver")
     @Operation(summary = "Mark vehicle as delivered")
+    @Transactional
     public Response deliverWorkOrder(@Parameter(description = "Work order ID") @PathParam("id") Long id) {
         return Response.ok(WorkOrderDetailResponse.from(useCase.deliverWorkOrder(id))).build();
     }

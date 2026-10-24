@@ -34,7 +34,10 @@ public class PartsReservationGateway implements PartsReservationPort {
     // MANDATORY, como no outbox: o InventoryUseCase vem de @Produces (o CDI nao intercepta) e o gateway de
     // estoque abre transacao propria se chamado fora de uma, o que deixaria a reserva comitada sozinha,
     // fora do passo da saga.
-    @Transactional(Transactional.TxType.MANDATORY)
+    // dontRollbackOn: falta de estoque e resposta de negocio, nao falha. Sem isto a excecao marca a transacao
+    // como rollback-only ao sair daqui, o interceptador faz rollback em silencio no fim do passo da saga, a
+    // compensacao que o orquestrador acabou de montar se perde e a mensagem e apagada sem rastro na DLQ.
+    @Transactional(value = Transactional.TxType.MANDATORY, dontRollbackOn = StockException.class)
     public void reserve(Long workOrderId) {
         Map<Long, Integer> wanted = requestedParts(workOrderId);
         requireAvailability(wanted);
