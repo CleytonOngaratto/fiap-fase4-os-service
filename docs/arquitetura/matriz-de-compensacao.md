@@ -39,7 +39,7 @@
 | F5 | **Falha ao criar a cobrança** (5xx do Mercado Pago esgotou o retry) | Billing (`PaymentRequestFailed`) | libera reserva → `CancelBudget` → `CancelDiagnosis` → cancela OS | `CANCELED` (`PAYMENT_REQUEST_FAILED`) / `CANCELED` / `CANCELED` / reserva liberada | BDD (MP simulado devolvendo 5xx) |
 | F6 | **Falha no reparo** (antes de concluir) | Execution (`RepairFailed`) | `RefundPayment` (**estorno**) → **devolve ao estoque** (local) → `CancelBudget` → cancela OS | `CANCELED` (`REPAIR_FAILED`) / pagamento `REFUNDED`, orçamento `CANCELED` / `REPAIR_FAILED` / peças devolvidas | BDD + e2e (flag de falha da demo, só ADMIN) |
 | F7 | **Pagamento confirmado depois da compensação** (corrida com o prazo) | **duas camadas**: o Billing, quando o orçamento já está `CANCELED` ao chegar a notificação; o orquestrador, quando o `PaymentConfirmed` saiu antes disso | o Billing estorna sozinho (`PAID_AFTER_CANCELLATION`) e **não publica evento**; o orquestrador manda `RefundPayment` **automático**, respondido com `PaymentRefunded` | inalterado (`CANCELED`) / pagamento `REFUNDED` / inalterado / inalterado | BDD |
-| F8 | **Estorno falha** (5xx do Mercado Pago) | Billing | retry com a **mesma** idempotency key; esgotou → DLQ + alerta + runbook. **A saga não "desiste" de compensar** | saga em `COMPENSATING` até resolver; alerta "saga parada" | BDD (MP simulado) + alerta provado no B8 |
+| F8 | **Estorno falha** (5xx do Mercado Pago) | Billing | retry com a **mesma** idempotency key; esgotou → DLQ + alerta + runbook. **A saga não "desiste" de compensar** | saga em `COMPENSATING` até resolver; alerta "saga parada" | **provado em ambiente real em 2026-10-29** (ver nota abaixo) + alerta no B8 |
 | F9 | **Participante fora do ar** | SQS (a mensagem espera) | nenhuma — retry até voltar; esgotou `maxReceiveCount` → **DLQ + alerta**; retoma no redrive | saga pausada, depois segue do ponto onde parou | e2e (escala o participante para 0) |
 | F9b | **Cancelamento pelo atendimento** (ADMIN), em qualquer estado antes do pivô | OS (endpoint ADMIN) | exatamente as compensações que faltam a partir do estado atual (as mesmas das linhas acima); depois do pivô → 409 | `CANCELED` (`CANCELED_BY_STAFF`) + o que o estado exigir nos outros serviços | BDD (em 3 estados) + e2e |
 | F10 | **Mensagem duplicada** | inbox do consumidor | nenhuma — ignorada | inalterado | BDD |
@@ -55,6 +55,13 @@ WARN com `sagaId` e `correlationId` e um contador. A camada do orquestrador cont
 corrida genuína, em que o Billing publicou `PaymentConfirmed` **antes** de o orçamento ser cancelado. Daí
 também a regra de que um `RefundPayment` para pagamento **já** estornado ainda responde `PaymentRefunded`:
 calar nesse caso deixaria a saga em `COMPENSATING` para sempre.
+
+> **F8 provado em ambiente real, sem simulação (2026-10-29).** A sandbox de contas de teste do Mercado
+> Pago recusa o estorno com `401 Unauthorized use of live credentials`, e a recusa exercitou a linha
+> inteira: retentativa com a mesma chave de idempotência, retentativa esgotada, mensagem na DLQ e a saga
+> **visível** em `COMPENSATING` com o passo de estorno pendente — não perdida, não silenciosamente
+> abandonada. É a diferença que esta matriz existe para garantir: compensação é **retentável**, nunca
+> desistível. O detalhe da recusa está no [ADR-008](adr/ADR-008-pagamento-mercado-pago.md).
 
 ## Invariantes que a matriz garante
 
