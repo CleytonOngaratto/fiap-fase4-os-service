@@ -120,15 +120,57 @@ testes de contrato, que é onde os ramos que a sandbox não dá de graça (5xx, 
 - **A proteção do webhook é só a assinatura.** A rota é pública por necessidade e não há *authorizer* no
   Gateway; a verificação é HMAC-SHA256 comparado em tempo constante, **negando quando o segredo não está
   configurado**. Em compensação, o endpoint não confia em nada do corpo recebido.
-- **O template do manifesto assinado é hipótese, não fato.** A página de webhooks do provedor mostra apenas
-  o formato do header (`ts=…,v1=…`) e manda usar o SDK dele. O formato implementado está marcado como
-  hipótese no código e será medido pelo botão "Simular" do painel **antes** do primeiro pagamento real,
-  junto com a confirmação de que o API Gateway repassa o `x-request-id` intacto até o pod — se ele
-  reescrever o header, todo webhook legítimo vira 401 e o sintoma é idêntico ao de segredo errado.
-- **A janela mínima de expiração da preferência é desconhecida.** O guia recomenda prazos de dias, mas a
-  recomendação é por causa de pagamento offline e Pix, que levam horas para acreditar. Se o provedor recusar
-  a janela curta da demonstração, a preferência vai sem expiração e o prazo continua valendo pelo
-  *scheduler* do orquestrador, que é quem compensa.
+- **O template do manifesto assinado segue hipótese — e a sessão real não conseguiu confirmá-lo.** A
+  página de webhooks do provedor mostra apenas o formato do header (`ts=…,v1=…`) e manda usar o SDK dele.
+  A medição planejada não pôde ser feita porque **o provedor nunca entregou notificação alguma** na sessão
+  de 2026-10-29: com um pagamento real aprovado, o log de acesso do Gateway registrou **zero** requisições
+  em `/billing/v1/webhooks/mercadopago`. O que ficou provado é o **nosso** lado da verificação, nos dois
+  sentidos, com notificações assinadas por nós com o mesmo segredo do painel: manifesto correto → **200**,
+  manifesto adulterado → **401**. Enquanto o provedor não entregar uma notificação de verdade, o template
+  continua **não confirmado**, e com ele o repasse do `x-request-id` por Gateway → ALB → pod.
+- **A expiração curta é aceita pelo provedor — e honrada por ele.** A dúvida era se o provedor recusaria a
+  janela curta da demonstração; medido em 2026-10-29: a preferência foi **criada sem reclamação** com a
+  janela derivada do prazo de pagamento, e o formato de data do adapter (`+00:00`, não `Z`) foi aceito.
+  Mais que aceita, a janela é **aplicada**: a primeira tentativa de pagamento, feita depois de a janela
+  passar, foi recusada na página do provedor com *"O tempo para realizar esta operação expirou"*. Isso
+  resolve a dúvida, mas cria uma operacional: **a janela tem de cobrir o tempo de um humano no navegador**.
+  Na sessão o prazo foi alongado para 2 horas no ConfigMap do cluster; o repositório continua com o valor
+  curto, porque em produção quem compensa é o *scheduler* do orquestrador, não a expiração do provedor.
+
+### O que a sandbox de contas de teste não permite
+
+Três limites foram medidos em 2026-10-29 e **nenhum deles é defeito do adapter**. Ficam registrados porque
+são exatamente o tipo de coisa que, sem registro, volta como suspeita de bug na próxima sessão.
+
+**1 · O estorno é recusado.** `POST /v1/payments/{id}/refunds` responde **401**:
+
+```json
+{"message":"Unauthorized use of live credentials","error":"unauthorized","status":401,
+ "cause":[{"code":7,"description":"Unauthorized use of live credentials"}]}
+```
+
+O pagamento correspondente traz `live_mode: true`, embora o dono do token seja uma conta marcada
+`test_user`. O mesmo token **cria preferência** e **lê** o pagamento, e até `GET /v1/payments/{id}/refunds`
+responde **200** — só a chamada que movimenta dinheiro é barrada. É restrição de credencial da conta, não
+do nosso caminho de código, que é exercido ponta a ponta contra servidor simulado (5 cenários, incluindo
+falha no estorno).
+
+De brinde, a recusa provou a compensação em produção **melhor do que o caminho feliz provaria**: o 401 virou
+retentativa, a retentativa esgotou, a mensagem caiu na DLQ e a saga ficou visível em `COMPENSATING` com o
+passo de estorno pendente — que é literalmente o que a matriz de compensação prescreve para falha de
+estorno. Compensação é retentável, nunca desistível.
+
+**2 · O provedor não entrega notificação.** Zero requisições no log de acesso do Gateway depois de um
+pagamento real aprovado. Consequência de desenho: **a confirmação não pode depender só do webhook**. Hoje
+o backstop é o prazo do orquestrador, que compensa; um `GET /v1/payments/{id}` periódico para pagamentos
+em `PENDING` fecharia o buraco, e fica registrado como melhoria, não como correção.
+
+**3 · As duas pontas têm de ser contas de teste.** Pagar como visitante ou com conta real contra um
+vendedor de teste é recusado com *"Uma das partes com as quais você está tentando efetuar o pagamento é de
+teste."* E o acesso à conta de teste é pelo **apelido**, não pelo e-mail. Dos cartões de teste do provedor,
+o Visa terminado em **5682** foi aceito e o Mastercard terminado em **6351** foi recusado com *"A transação
+não aceita este meio de pagamento"* — o resultado depende do meio de pagamento habilitado na conta, não só
+do nome do portador.
 
 ## Em produção, o que poderia mudar
 
@@ -147,3 +189,8 @@ continuaria o mesmo.
 | 2026-10-25 | Reentrega do webhook não cria segunda linha em `payment_attempts` nem segundo evento — *check-then-insert* devolvendo booleano, com `UNIQUE(payment_id, mp_payment_id, status_detail)` no banco como rede de segurança |
 | 2026-10-25 | Formato de data produzido pelo adapter medido: `2026-10-25T12:30:00.000+00:00` (offset UTC, não `Z`). **Se o provedor aceita essa forma é medição pendente da sessão com a sandbox** |
 | 2026-10-25 | Credenciais publicadas como SecureString em `/fase4/mercadopago/*` e conferidas por hash contra os arquivos de origem; nenhum valor em repositório |
+| 2026-10-29 | **Pagamento real aprovado no provedor, R$ 257,70**, com `external_reference` igual ao id do orçamento. A OS atravessou `RECEIVED → UNDER_DIAGNOSIS → PENDING_APPROVAL → APPROVED → IN_PROGRESS → COMPLETED` com o dinheiro de verdade no meio |
+| 2026-10-29 | Formato de data do adapter (`+00:00`) **aceito** na criação da preferência; a expiração enviada é **honrada** pelo provedor — tentativa após a janela recusada com "O tempo para realizar esta operação expirou" |
+| 2026-10-29 | Tentativa recusada: o pagamento **continuou** `PENDING` e duas entregas da mesma notificação geraram **uma** linha em `payment_attempts` e **um** `PaymentAttemptRejected` |
+| 2026-10-29 | Verificação da assinatura provada nos dois sentidos com notificações assinadas por nós: manifesto correto → **200**, adulterado → **401**. O provedor **não** entregou notificação própria (zero requisições no log do Gateway), então o template do manifesto segue **não confirmado** |
+| 2026-10-29 | Estorno **recusado pela sandbox** com 401 `Unauthorized use of live credentials` (pagamento em `live_mode: true`, token de conta `test_user`); `GET` de estornos responde 200 com o mesmo token. A recusa provou a compensação: retentativa → DLQ → saga em `COMPENSATING` com o passo de estorno pendente |
