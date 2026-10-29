@@ -120,14 +120,12 @@ testes de contrato, que é onde os ramos que a sandbox não dá de graça (5xx, 
 - **A proteção do webhook é só a assinatura.** A rota é pública por necessidade e não há *authorizer* no
   Gateway; a verificação é HMAC-SHA256 comparado em tempo constante, **negando quando o segredo não está
   configurado**. Em compensação, o endpoint não confia em nada do corpo recebido.
-- **O template do manifesto assinado segue hipótese — e a sessão real não conseguiu confirmá-lo.** A
-  página de webhooks do provedor mostra apenas o formato do header (`ts=…,v1=…`) e manda usar o SDK dele.
-  A medição planejada não pôde ser feita porque **o provedor nunca entregou notificação alguma** na sessão
-  de 2026-10-29: com um pagamento real aprovado, o log de acesso do Gateway registrou **zero** requisições
-  em `/billing/v1/webhooks/mercadopago`. O que ficou provado é o **nosso** lado da verificação, nos dois
-  sentidos, com notificações assinadas por nós com o mesmo segredo do painel: manifesto correto → **200**,
-  manifesto adulterado → **401**. Enquanto o provedor não entregar uma notificação de verdade, o template
-  continua **não confirmado**, e com ele o repasse do `x-request-id` por Gateway → ALB → pod.
+- ~~**O template do manifesto assinado é hipótese.**~~ **Deixou de ser: confirmado em 2026-10-29.** A
+  página de webhooks do provedor mostra apenas o formato do header (`ts=…,v1=…`) e manda usar o SDK dele,
+  então o template `id:<data.id>;request-id:<x-request-id>;ts:<ts>;` foi implementado como hipótese. A
+  simulação do painel, **assinada pelo próprio provedor**, atravessou Gateway → ALB → pod e a verificação
+  **aceitou**. Isso fecha as duas incertezas de uma vez: o template está correto **e** o API Gateway
+  repassa o `x-request-id` intacto — se ele reescrevesse o header, a assinatura não fecharia.
 - **A expiração curta é aceita pelo provedor — e honrada por ele.** A dúvida era se o provedor recusaria a
   janela curta da demonstração; medido em 2026-10-29: a preferência foi **criada sem reclamação** com a
   janela derivada do prazo de pagamento, e o formato de data do adapter (`+00:00`, não `Z`) foi aceito.
@@ -160,10 +158,22 @@ retentativa, a retentativa esgotou, a mensagem caiu na DLQ e a saga ficou visív
 passo de estorno pendente — que é literalmente o que a matriz de compensação prescreve para falha de
 estorno. Compensação é retentável, nunca desistível.
 
-**2 · O provedor não entrega notificação.** Zero requisições no log de acesso do Gateway depois de um
-pagamento real aprovado. Consequência de desenho: **a confirmação não pode depender só do webhook**. Hoje
-o backstop é o prazo do orquestrador, que compensa; um `GET /v1/payments/{id}` periódico para pagamentos
-em `PENDING` fecharia o buraco, e fica registrado como melhoria, não como correção.
+**2 · ~~O provedor não entrega notificação.~~ Era configuração nossa — corrigido.** Durante a sessão, zero
+requisições chegaram ao webhook depois de um pagamento real aprovado, e isso foi registrado aqui como
+limitação do ambiente. **Estava errado.** O painel do provedor mantém **duas configurações separadas** —
+modo de teste e modo de produção —, cada uma com URL, eventos e **segredo próprios**. A de teste estava
+completa; a de **produção estava sem URL nenhuma**. Pagamento feito por conta de teste chega com
+`live_mode: true` e portanto notifica pela configuração de **produção**, que não tinha destino. Os
+eventos estavam certos nas duas o tempo todo.
+
+Duas lições de desenho ficam, e a segunda é a que importa:
+
+1. Quando um provedor separa ambientes, **o segredo também é por ambiente** — a simulação em modo de teste
+   devolvia 401 com o segredo de produção implantado, e o sintoma é idêntico ao de template errado.
+2. **A confirmação não pode depender só do webhook.** Uma caixa de texto vazia num painel externo derrubou
+   o canal inteiro sem nenhum erro em lugar nenhum. O backstop existe e funcionou — o prazo do
+   orquestrador compensou sozinho —, mas um `GET /v1/payments/{id}` periódico para pagamentos em
+   `PENDING` fecharia o buraco, e fica registrado como melhoria.
 
 **3 · As duas pontas têm de ser contas de teste.** Pagar como visitante ou com conta real contra um
 vendedor de teste é recusado com *"Uma das partes com as quais você está tentando efetuar o pagamento é de
@@ -192,7 +202,10 @@ continuaria o mesmo.
 | 2026-10-29 | **Pagamento real aprovado no provedor, R$ 257,70**, com `external_reference` igual ao id do orçamento. A OS atravessou `RECEIVED → UNDER_DIAGNOSIS → PENDING_APPROVAL → APPROVED → IN_PROGRESS → COMPLETED` com o dinheiro de verdade no meio |
 | 2026-10-29 | Formato de data do adapter (`+00:00`) **aceito** na criação da preferência; a expiração enviada é **honrada** pelo provedor — tentativa após a janela recusada com "O tempo para realizar esta operação expirou" |
 | 2026-10-29 | Tentativa recusada: o pagamento **continuou** `PENDING` e duas entregas da mesma notificação geraram **uma** linha em `payment_attempts` e **um** `PaymentAttemptRejected` |
-| 2026-10-29 | Verificação da assinatura provada nos dois sentidos com notificações assinadas por nós: manifesto correto → **200**, adulterado → **401**. O provedor **não** entregou notificação própria (zero requisições no log do Gateway), então o template do manifesto segue **não confirmado** |
+| 2026-10-29 | Verificação da assinatura provada nos dois sentidos com notificações assinadas por nós: manifesto correto → **200**, adulterado → **401** |
+| 2026-10-29 | **Template do manifesto e repasse do `x-request-id` CONFIRMADOS** pela simulação do painel, assinada pelo próprio provedor: a requisição atravessou Gateway → ALB → pod e a assinatura **validou**. Discriminado antes por duas chamadas: manifesto **com** `request-id` passou da verificação, **sem** foi recusado — logo o header chega intacto |
+| 2026-10-29 | Causa real das zero entregas medida: a configuração de **produção** do painel estava **sem URL**, e pagamento de conta de teste chega com `live_mode: true`, notificando por ela. Os três segredos conferidos por hash: o implantado é o de produção; o de teste é outro |
+| 2026-10-29 | Defeito achado pela própria simulação: `GET /v1/payments/{id}` com id inexistente devolve 404 e o webhook respondia **500** — reentrega infinita, porque o provedor insiste até receber 2xx. Corrigido: 404 do provedor vira `UnknownPaymentException`, o webhook reconhece com 200 e registra WARN |
 | 2026-10-29 | Estorno **recusado pela sandbox** com 401 `Unauthorized use of live credentials` (pagamento em `live_mode: true`, token de conta `test_user`); `GET` de estornos responde 200 com o mesmo token. A recusa provou a compensação: retentativa → DLQ → saga em `COMPENSATING` com o passo de estorno pendente |
 | 2026-10-29 | **Dois** pagamentos reais confirmados (R$ 257,70 cada), com os ids do provedor gravados em `payments.mp_payment_id`. `payment_attempts` com **1** linha (`cc_rejected_insufficient_amount`), e o outbox dos dois serviços **drenado** (`sent_at is null` = 0) — nenhum evento preso |
 | 2026-10-29 | **Prazo de pagamento vencido compensou sozinho:** cobrança não paga → *scheduler* do orquestrador estourou o prazo → orçamento e pagamento `CANCELED` com motivo `PAYMENT_EXPIRED`. É o cancelamento *best-effort* desta ADR exercitado no ramo em que o cliente **nunca abriu o link** — o caso comum, e o que não tem API de cancelamento no provedor |
