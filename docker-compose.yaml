@@ -26,6 +26,7 @@ services:
       QUARKUS_SQS_AWS_CREDENTIALS_STATIC_PROVIDER_ACCESS_KEY_ID: elasticmq
       QUARKUS_SQS_AWS_CREDENTIALS_STATIC_PROVIDER_SECRET_ACCESS_KEY: elasticmq
       EXECUTION_COMMANDS_QUEUE_URL: http://oficina_mq:9324/000000000000/execution-commands.fifo
+      BILLING_COMMANDS_QUEUE_URL: http://oficina_mq:9324/000000000000/billing-commands.fifo
       SAGA_REPLIES_QUEUE_URL: http://oficina_mq:9324/000000000000/os-saga-replies.fifo
     volumes:
       - ./secrets:/deployments/secrets:ro
