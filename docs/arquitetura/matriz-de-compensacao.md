@@ -35,7 +35,7 @@
 | F1 | Cliente **rejeita** o orçamento | Billing (`BudgetRejected`) | `CancelDiagnosis` (fecha o item no Execution) → cancela OS | `CANCELED` (`REJECTED_BY_CUSTOMER`) / orçamento `REJECTED` / `CANCELED` / intacto | BDD + e2e |
 | F2 | **Prazo de aprovação** vence | *scheduler* de prazos | `CancelBudget` (Billing passa a recusar aprovação tardia com 409) → `CancelDiagnosis` → cancela OS | `CANCELED` (`APPROVAL_EXPIRED`) / `CANCELED` / `CANCELED` / intacto | BDD + e2e (prazo de demo: 2 min) |
 | F3 | **Estoque insuficiente** na reserva | OS, local (na transação do `BudgetApproved`) | `CancelBudget` → `CancelDiagnosis` → cancela OS | `CANCELED` (`OUT_OF_STOCK`) / `CANCELED` / `CANCELED` / intacto | BDD + e2e (peça com estoque 0) |
-| F4 | **Prazo de pagamento** vence (recusas no meio só ficam registradas) | *scheduler* de prazos | `CancelPayment` (invalida a cobrança) → **libera reserva** (local) → `CancelBudget` → `CancelDiagnosis` → cancela OS | `CANCELED` (`PAYMENT_EXPIRED`) / pagamento `CANCELED`, orçamento `CANCELED` / `CANCELED` / reserva liberada | BDD + e2e (cartão `FUND` + prazo de demo) |
+| F4 | **Prazo de pagamento** vence (recusas no meio só ficam registradas) | *scheduler* de prazos | `CancelPayment` (invalida a cobrança) → **libera reserva** (local) → `CancelBudget` → `CancelDiagnosis` → cancela OS | `CANCELED` (`PAYMENT_EXPIRED`) / pagamento `CANCELED`, orçamento `CANCELED` / `CANCELED` / reserva liberada | **provado em ambiente real em 2026-10-29** (ver nota abaixo) + BDD |
 | F5 | **Falha ao criar a cobrança** (5xx do Mercado Pago esgotou o retry) | Billing (`PaymentRequestFailed`) | libera reserva → `CancelBudget` → `CancelDiagnosis` → cancela OS | `CANCELED` (`PAYMENT_REQUEST_FAILED`) / `CANCELED` / `CANCELED` / reserva liberada | BDD (MP simulado devolvendo 5xx) |
 | F6 | **Falha no reparo** (antes de concluir) | Execution (`RepairFailed`) | `RefundPayment` (**estorno**) → **devolve ao estoque** (local) → `CancelBudget` → cancela OS | `CANCELED` (`REPAIR_FAILED`) / pagamento `REFUNDED`, orçamento `CANCELED` / `REPAIR_FAILED` / peças devolvidas | BDD + e2e (flag de falha da demo, só ADMIN) |
 | F7 | **Pagamento confirmado depois da compensação** (corrida com o prazo) | **duas camadas**: o Billing, quando o orçamento já está `CANCELED` ao chegar a notificação; o orquestrador, quando o `PaymentConfirmed` saiu antes disso | o Billing estorna sozinho (`PAID_AFTER_CANCELLATION`) e **não publica evento**; o orquestrador manda `RefundPayment` **automático**, respondido com `PaymentRefunded` | inalterado (`CANCELED`) / pagamento `REFUNDED` / inalterado / inalterado | BDD |
@@ -55,6 +55,15 @@ WARN com `sagaId` e `correlationId` e um contador. A camada do orquestrador cont
 corrida genuína, em que o Billing publicou `PaymentConfirmed` **antes** de o orçamento ser cancelado. Daí
 também a regra de que um `RefundPayment` para pagamento **já** estornado ainda responde `PaymentRefunded`:
 calar nesse caso deixaria a saga em `COMPENSATING` para sempre.
+
+> **F4 provado em ambiente real (2026-10-29).** Uma cobrança criada e nunca paga — o cliente não abriu o
+> link — teve o prazo estourado pelo *scheduler* do orquestrador, e a compensação correu até o fim do que
+> depende de Billing: `cancel_reason = PAYMENT_EXPIRED` na saga, orçamento `CANCELED` e pagamento
+> `CANCELED` com o mesmo motivo. É justamente o ramo em que o provedor **não tem API de cancelamento**
+> (não existe id de pagamento a cancelar, porque ninguém pagou), e é por isso que o cancelamento é
+> *best-effort* e o `PaymentCanceled` sai de qualquer forma — ver
+> [ADR-008](adr/ADR-008-pagamento-mercado-pago.md). Esta prova não estava no plano do bloco: apareceu
+> porque a sessão rodou tempo real com prazos reais.
 
 > **F8 provado em ambiente real, sem simulação (2026-10-29).** A sandbox de contas de teste do Mercado
 > Pago recusa o estorno com `401 Unauthorized use of live credentials`, e a recusa exercitou a linha
