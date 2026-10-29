@@ -38,7 +38,7 @@
 | F4 | **Prazo de pagamento** vence (recusas no meio só ficam registradas) | *scheduler* de prazos | `CancelPayment` (invalida a cobrança) → **libera reserva** (local) → `CancelBudget` → `CancelDiagnosis` → cancela OS | `CANCELED` (`PAYMENT_EXPIRED`) / pagamento `CANCELED`, orçamento `CANCELED` / `CANCELED` / reserva liberada | BDD + e2e (cartão `FUND` + prazo de demo) |
 | F5 | **Falha ao criar a cobrança** (5xx do Mercado Pago esgotou o retry) | Billing (`PaymentRequestFailed`) | libera reserva → `CancelBudget` → `CancelDiagnosis` → cancela OS | `CANCELED` (`PAYMENT_REQUEST_FAILED`) / `CANCELED` / `CANCELED` / reserva liberada | BDD (MP simulado devolvendo 5xx) |
 | F6 | **Falha no reparo** (antes de concluir) | Execution (`RepairFailed`) | `RefundPayment` (**estorno**) → **devolve ao estoque** (local) → `CancelBudget` → cancela OS | `CANCELED` (`REPAIR_FAILED`) / pagamento `REFUNDED`, orçamento `CANCELED` / `REPAIR_FAILED` / peças devolvidas | BDD + e2e (flag de falha da demo, só ADMIN) |
-| F7 | **Pagamento confirmado depois da compensação** (corrida com o prazo) | orquestrador (`PaymentConfirmed` numa saga `COMPENSATING`/`COMPENSATED`) | `RefundPayment` **automático**, com motivo registrado | inalterado (`CANCELED`) / pagamento `REFUNDED` / inalterado / inalterado | BDD |
+| F7 | **Pagamento confirmado depois da compensação** (corrida com o prazo) | **duas camadas**: o Billing, quando o orçamento já está `CANCELED` ao chegar a notificação; o orquestrador, quando o `PaymentConfirmed` saiu antes disso | o Billing estorna sozinho (`PAID_AFTER_CANCELLATION`) e **não publica evento**; o orquestrador manda `RefundPayment` **automático**, respondido com `PaymentRefunded` | inalterado (`CANCELED`) / pagamento `REFUNDED` / inalterado / inalterado | BDD |
 | F8 | **Estorno falha** (5xx do Mercado Pago) | Billing | retry com a **mesma** idempotency key; esgotou → DLQ + alerta + runbook. **A saga não "desiste" de compensar** | saga em `COMPENSATING` até resolver; alerta "saga parada" | BDD (MP simulado) + alerta provado no B8 |
 | F9 | **Participante fora do ar** | SQS (a mensagem espera) | nenhuma — retry até voltar; esgotou `maxReceiveCount` → **DLQ + alerta**; retoma no redrive | saga pausada, depois segue do ponto onde parou | e2e (escala o participante para 0) |
 | F9b | **Cancelamento pelo atendimento** (ADMIN), em qualquer estado antes do pivô | OS (endpoint ADMIN) | exatamente as compensações que faltam a partir do estado atual (as mesmas das linhas acima); depois do pivô → 409 | `CANCELED` (`CANCELED_BY_STAFF`) + o que o estado exigir nos outros serviços | BDD (em 3 estados) + e2e |
@@ -46,6 +46,15 @@
 | F11 | Corrida entre **prazo e evento** na mesma saga | versão otimista da `saga_instance` | quem perde relê o estado; se a saga já compensava, cai em F7 | consistente | BDD |
 | F12 | Diagnóstico com **item inexistente** no catálogo | Execution, por REST síncrono ao OS | não entra na saga — **400** ao mecânico | inalterado | teste de contrato + BDD |
 | F13 | **OS fora do ar** quando o mecânico conclui o diagnóstico | Execution (timeout/circuit breaker) | não entra na saga — **503** ao mecânico, que tenta de novo | inalterado | teste de componente |
+
+ℹ️ **Por que F7 tem duas camadas.** Quando a notificação do pagamento chega e o orçamento **já** está
+`CANCELED`, o Billing sabe sozinho que aquele dinheiro não deve ficar: estorna com a mesma chave de
+idempotência e registra o motivo. Não publica evento porque não há passo pendente — a saga já está
+`COMPENSATED`, e um `PaymentRefunded` avulso seria resposta para quem não perguntou; no lugar dele ficam um
+WARN com `sagaId` e `correlationId` e um contador. A camada do orquestrador continua necessária para a
+corrida genuína, em que o Billing publicou `PaymentConfirmed` **antes** de o orçamento ser cancelado. Daí
+também a regra de que um `RefundPayment` para pagamento **já** estornado ainda responde `PaymentRefunded`:
+calar nesse caso deixaria a saga em `COMPENSATING` para sempre.
 
 ## Invariantes que a matriz garante
 

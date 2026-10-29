@@ -1,13 +1,14 @@
-# Banco de dados — Postgres do OS Service
+# Banco de dados — os Postgres do OS Service e do Billing Service
 
-> Escrito no bloco do domínio do OS Service. Os estados que estas tabelas guardam estão na
+> Escrito no bloco do domínio do OS Service; a seção do Billing entrou no bloco dele. Os estados que
+> estas tabelas guardam estão na
 > [máquina de estados](maquina-de-estados.md); as mensagens que saem e entram, no
 > [catálogo de mensagens](catalogo-de-mensagens.md).
-> O banco do Billing e a tabela do Execution ganham suas seções nos blocos de cada um.
+> A tabela do Execution ganha sua seção no bloco dele.
 
 Cada serviço tem **banco próprio** e ninguém lê o banco do outro: o que atravessa a fronteira é mensagem ou
-chamada de API. Este documento descreve o Postgres do OS Service — o único que, nesta fase, guarda **estado de
-processo** além de estado de negócio.
+chamada de API. Este documento descreve os dois bancos relacionais da fase, o do OS Service e o do Billing
+Service: os dois guardam **estado de processo** além de estado de negócio, porque os dois participam da saga.
 
 ## Visão geral
 
@@ -150,6 +151,87 @@ pode não vir. Duas consequências que viraram regra no código:
    validam contra o **disponível**, não contra o total: sem isso, um ajuste do atendimento comeria unidades
    reservadas para uma OS em andamento e deixaria o disponível negativo.
 
+## Postgres do Billing Service
+
+Instância própria, banco próprio: o Billing não lê nem escreve no banco do OS, e vice-versa. Guarda o
+orçamento, a cobrança e — como o OS — o **estado de processo** da sua parte da saga, nas mesmas duas tabelas
+de mensageria.
+
+```mermaid
+erDiagram
+    budgets ||--o{ budget_items : "snapshot precificado"
+    budgets ||--o| payments : "no maximo uma cobranca"
+    payments ||--o{ payment_attempts : "tentativas recusadas"
+```
+
+Além dessas quatro, `saga_inbox` e `saga_outbox`, idênticas em papel às do OS.
+
+### `budgets` — um orçamento por ordem de serviço
+
+`id` é **UUID gerado na aplicação** — ele vai no `external_reference` da cobrança e volta na notificação do
+provedor, então precisa existir antes de qualquer `INSERT` e não pode ser adivinhável por quem recebe o link.
+`work_order_id` é **UNIQUE**, e é essa constraint que torna `CreateBudget` idempotente pela chave de negócio:
+a reentrega do comando devolve o mesmo orçamento e a mesma resposta, em vez de criar um segundo.
+
+O `approval_deadline` chega no comando e é **verificado na aprovação**: orçamento aprovado depois do prazo
+responde **409**. Sem isso, um orçamento que ficou órfão — porque a ordem foi cancelada antes de a saga
+registrar o passo de cancelá-lo — continuaria aprovável para sempre, e nasceria uma cobrança para uma ordem
+que já não existe.
+
+### `budget_items` — chave composta, não sequencial
+
+PK composta por `budget_id` + `type` + `catalog_id`. O motivo é o mesmo do snapshot do OS: o item repetido no
+mesmo orçamento é erro de origem, e com chave sequencial ele entraria duas vezes em silêncio. Com a chave
+composta, o segundo `INSERT` falha — e falha **antes** de a mensagem ser confirmada.
+
+Os preços ficam **congelados** aqui: `unit_price` é o preço no momento do diagnóstico, não uma referência ao
+catálogo. Reajuste de tabela não muda orçamento já emitido.
+
+### `payments` — uma cobrança por orçamento, com a chave do estorno
+
+`budget_id` é **UNIQUE**: um orçamento tem no máximo uma cobrança, e `RequestPayment` reentregue reaproveita
+a que existe em vez de criar a segunda.
+
+`refund_idempotency_key` é **NOT NULL** e nasce junto com a cobrança, muito antes de existir qualquer estorno.
+É ela que vai no header `X-Idempotency-Key` em **toda** tentativa de estorno — a do retry e a do estorno
+automático do pagamento tardio. Gerá-la na hora do estorno faria cada retentativa pedir um estorno novo.
+
+`cancel_reason` distingue os dois caminhos que levam ao mesmo estado final: `REJECTED_BY_CUSTOMER` e
+`PAID_AFTER_CANCELLATION`. Sem a coluna, um pagamento `REFUNDED` não diria se foi compensação pedida pelo
+orquestrador ou dinheiro devolvido por iniciativa do próprio serviço.
+
+### `payment_attempts` — tentativa recusada é linha, não mudança de estado
+
+Cartão recusado não muda o estado da cobrança: ela continua `PENDING` e o cliente pode tentar de novo até o
+prazo. Cada recusa vira uma linha, e o evento que sai é informativo.
+
+Três detalhes aqui foram escolhidos contra bugs silenciosos:
+
+1. **PK própria (`id bigserial`).** A tabela é um log; sem chave primária a entidade não existe para o
+   mapeamento objeto-relacional.
+2. **`UNIQUE (payment_id, mp_payment_id, status_detail)`.** O provedor reentrega notificação; sem a
+   constraint, a mesma recusa viraria duas linhas e dois eventos.
+3. **`status_detail` é NOT NULL**, com um valor de preenchimento posto pela aplicação quando o provedor não
+   manda nenhum. No PostgreSQL, **NULL é distinto de NULL numa constraint `UNIQUE`** — duas notificações sem
+   detalhe entrariam as duas — e a consulta `status_detail = ?` com NULL **nunca** é verdadeira, então a
+   verificação prévia também falharia. A deduplicação furaria nos dois caminhos ao mesmo tempo, em silêncio.
+
+A deduplicação em si **não** depende de a constraint estourar: o caminho normal é consultar e então inserir,
+devolvendo um booleano. No PostgreSQL um `INSERT` que viola constraint **aborta a transação inteira**, e dali
+não há como seguir nem responder ao orquestrador — a constraint é rede de segurança para concorrência, não o
+mecanismo.
+
+### `saga_inbox` e `saga_outbox` — os mesmos dois mecanismos
+
+Idênticas às do OS em papel e em formato: a inbox grava o `messageId` **na mesma transação** do efeito, e a
+outbox torna "gravar o estado e publicar o evento" um ato só. O relay drena com `FOR UPDATE SKIP LOCKED`, e o
+índice parcial `WHERE sent_at IS NULL` mantém a varredura proporcional ao que falta enviar, não ao histórico.
+
+Esse índice parcial é também o motivo de as migrations do Billing **não** rodarem no banco em memória dos
+testes: o H2 não o suporta. O esquema dos testes vem do mapeamento objeto-relacional, e as migrations são
+exercidas contra um **PostgreSQL de verdade** em container — que é onde as constraints acima são provadas, uma
+a uma.
+
 ## Convenções
 
 - **Migrations versionadas pelo Flyway**, aplicadas no start da aplicação. Coluna obrigatória em tabela com
@@ -165,3 +247,5 @@ pode não vir. Duas consequências que viraram regra no código:
 |---|---|
 | 2026-10-22 | `./mvnw clean verify` com 562 testes verdes, cobertura de linha 89,2%; a V5.0.0 aplicada pelo Flyway em Postgres real no teste de mensageria (Testcontainers) |
 | 2026-10-22 | Reserva, baixa, liberação e devolução provadas em teste puro, incluindo a recusa quando o pedido passa do disponível e a recusa da baixa manual sobre unidade reservada |
+| 2026-10-25 | Billing: `./mvnw clean verify` com 165 testes verdes e cobertura de linha 97,8%; V1.0.0 e V2.0.0 aplicadas pelo Flyway em PostgreSQL 16 real (Testcontainers), com o índice parcial `WHERE sent_at IS NULL` conferido em `pg_indexes` |
+| 2026-10-25 | Billing: o banco real **recusa** o segundo orçamento com o mesmo `work_order_id` e a segunda notificação com a mesma tripla `(payment_id, mp_payment_id, status_detail)` |
