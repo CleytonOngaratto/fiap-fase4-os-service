@@ -151,14 +151,22 @@ stateDiagram-v2
         PENDING --> CONFIRMED: webhook + GET /v1/payments/{id} aprovado
         PENDING --> CANCELED: CancelPayment (prazo vencido)
         CONFIRMED --> REFUNDED: RefundPayment
-        CANCELED --> REFUNDED: pagamento tardio (estorno automático)
+        CANCELED --> REFUNDED: pagamento tardio (PAID_AFTER_CANCELLATION)
     }
 ```
 
-- *Semantic lock*: aprovar exige `PENDING_APPROVAL`; um orçamento `CANCELED` responde **409** à aprovação
-  tardia.
+- *Semantic lock* com **três** condições, nesta ordem: quem aprova tem de ser o dono (**403**), o orçamento
+  tem de estar `PENDING_APPROVAL` (**409** se já foi respondido ou cancelado) e o `approval_deadline` não
+  pode ter vencido (**409**). A terceira fecha o caso do orçamento órfão: ordem cancelada antes de a saga
+  registrar o passo de cancelar o orçamento deixaria um orçamento aprovável para sempre.
 - Tentativas recusadas (`rejected` no Mercado Pago) viram linhas em `payment_attempts` e o evento informativo
   `PaymentAttemptRejected`. **Não** mudam o estado do pagamento.
+- `CANCELED → REFUNDED` é o pagamento que chega **depois** de a saga já ter compensado: o Billing estorna
+  por conta própria, grava o motivo `PAID_AFTER_CANCELLATION` e **não publica evento** — a saga já está
+  `COMPENSATED` e não tem passo esperando resposta. É a primeira das duas camadas de F7; a segunda, no
+  orquestrador, cobre a corrida em que o `PaymentConfirmed` saiu antes de o orçamento virar `CANCELED`.
+  Ver [matriz de compensação](matriz-de-compensacao.md) e
+  [ADR-008](adr/ADR-008-pagamento-mercado-pago.md).
 
 ### Execution (DynamoDB — item `STATE` da OS)
 

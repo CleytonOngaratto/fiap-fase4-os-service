@@ -147,10 +147,22 @@ ele que se recupera em que passo o processo está e o que falta compensar.
 | `BudgetCanceled` | Billing | `budgetId` | confirma a compensação |
 | `PaymentRequested` | Billing | `budgetId`, `paymentLink` (`init_point`), `preferenceId` | abre o prazo de pagamento |
 | `PaymentRequestFailed` | Billing | `reason` (5xx do MP esgotado) | compensa (motivo `PAYMENT_REQUEST_FAILED`) |
-| `PaymentAttemptRejected` | Billing | `statusDetail` (ex.: saldo insuficiente) | **informativo** — registra no histórico e segue esperando até o prazo |
+| `PaymentAttemptRejected` | Billing | `statusDetail` **e** `reason`, com o mesmo valor (ver a nota abaixo) | **informativo** — registra no histórico e segue esperando até o prazo |
 | `PaymentConfirmed` | Billing | `paymentId`, `amount` | baixa peças (local) → `StartRepair`; se a saga já compensou → `RefundPayment` (estorno automático) |
 | `PaymentCanceled` | Billing | `budgetId` | confirma a compensação |
 | `PaymentRefunded` | Billing | `paymentId`, `refundId` | confirma a compensação |
+
+ℹ️ **Campos aditivos que o Billing envia, todos com `version: 1`.** O orquestrador é *tolerant reader* por
+contrato (§2), e campo novo opcional **não** muda a versão. O que ele de fato lê dos eventos do Billing é
+`budgetId`, `paymentId`, `reason`, `description` e `items`; o resto é informação para log, painel e
+depuração.
+
+| Evento | Campo aditivo | Por que existe |
+|---|---|---|
+| `PaymentAttemptRejected` | `reason`, duplicando `statusDetail` | **divergência registrada**: o catálogo nomeou o campo `statusDetail`, que descreve melhor o dado (`cc_rejected_insufficient_amount`), mas o orquestrador lê `reason`. Em vez de escolher um e quebrar o outro, o evento leva **os dois**, com o mesmo valor |
+| `BudgetRejected` | `approvedBy` | o payload é o mesmo de `BudgetApproved`, e aqui ele carrega **quem respondeu**, não quem aprovou. O nome é herdado do campo que o catálogo já definia para a aprovação; quem ler um log de rejeição precisa saber disso |
+| `PaymentConfirmed` | `amount` | valor efetivamente pago, lido do provedor — útil para conferir contra o total do orçamento |
+| `PaymentRefunded` | `refundId` | identificador do estorno no provedor, para conferência no painel dele |
 
 ## 5. Passos locais do orquestrador (sem mensagem)
 
