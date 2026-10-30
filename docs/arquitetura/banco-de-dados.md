@@ -1,4 +1,4 @@
-# Banco de dados — os Postgres do OS Service e do Billing Service
+# Banco de dados — os dois Postgres e o DynamoDB
 
 > Escrito no bloco do domínio do OS Service; a seção do Billing entrou no bloco dele. Os estados que
 > estas tabelas guardam estão na
@@ -241,6 +241,47 @@ a uma.
 - **Nenhum segredo e nenhum identificador de conta neste documento.** Senha do banco e credenciais vivem no
   Parameter Store; o endpoint muda a cada sessão do laboratório.
 
+## DynamoDB do Execution Service — uma tabela só
+
+O terceiro banco não é SQL, e a razão está na [ADR-009](adr/ADR-009-tabela-unica-do-execution.md): o acesso é
+sempre **por ordem de serviço** ou **por filial e status**, nunca por junção. Uma tabela guarda quatro tipos de
+item, distinguidos pela chave de ordenação:
+
+| `pk` | `sk` | O que é | Índice que o alcança |
+|---|---|---|---|
+| `WO#<id>` | `STATE` | o item de execução: status, filial, `sagaId`, placa, relato, mecânico, descrição do diagnóstico, itens, versão | `gsi-branch-status` |
+| `WO#<id>` | `STEP#<instante>#<ação>` | histórico de etapas, só acréscimo | — (lido pela partição da OS) |
+| `WO#<id>` | `INBOX#<messageId>` | marca de comando processado, com TTL | — |
+| `WO#<id>` | `OUTBOX#<messageId>` | evento a publicar; `sentAt` ausente = pendente | `gsi-outbox-pending` |
+
+**Por que tudo na mesma partição da OS:** é o que permite gravar estado, histórico, inbox e outbox num único
+`TransactWriteItems`. Ou os quatro entram, ou nenhum entra — o mesmo "commit e publicar num só ato" que o
+`saga_outbox` dá no Postgres, sem transação distribuída.
+
+**`gsi-branch-status`** — chave de partição `<branchId>#<status>`, ordenação `enqueuedAt`. É a fila do mecânico:
+"as ordens da filial SP-01 esperando diagnóstico, a mais antiga primeiro" é uma única consulta, sem filtro e sem
+varredura. Só o item `STATE` carrega essas chaves (índice esparso), então histórico, inbox e outbox não entram
+nele. ⚠️ Ao chegar a um estado terminal o item **reescreve** a chave com o status novo em vez de removê-la: sai
+da fila porque mudou de partição, e continua consultável por `CANCELED` ou `REPAIR_DONE`.
+
+**`gsi-outbox-pending`** — partição constante `PENDING`, ordenação `occurredAt`. Existe porque o relay precisa
+achar pendências **de todas as ordens**, e sem índice isso seria uma varredura da tabela. Ao marcar `sentAt`, o
+relay **remove** as duas chaves e o item sai do índice. Partição única é adequada ao volume do projeto e está
+registrada em "Lab × Produção": numa conta real a chave seria fragmentada (`OUTBOX#<shard>`) para não
+concentrar escrita numa partição.
+
+**Concorrência sem `SELECT ... FOR UPDATE`.** Cada transição condiciona a escrita ao **status e à versão** que a
+leitura devolveu (leitura forte, `ConsistentRead`), e a versão sobe a cada gravação. Quem perde a corrida não
+sobrescreve: recebe a transação cancelada e responde 409 (pedido humano) ou segue sem alterar (comando da
+saga). A inbox usa `attribute_not_exists` na própria chave, e é por isso que a reentrega do mesmo `messageId`
+não gera segundo efeito **nem segunda resposta**.
+
+**O que o DynamoDB não dá, e como se resolve.** Não há `SKIP LOCKED`: com duas réplicas, as duas leem o mesmo
+lote de pendências. Quem perde a condição `attribute_not_exists(sentAt)` não remarca, mas a mensagem pode sair
+duas vezes. A garantia durável contra isso **não** é a janela de deduplicação do SNS (5 minutos, insuficiente se
+o item ficar pendente mais que isso): é a `saga_inbox` do OS Service, que deduplica por `messageId` — e é por
+isso que o `messageId` do evento de resposta é **derivado do comando**, não aleatório.
+
 ## Evidências
 
 | Data | Evidência |
@@ -249,3 +290,4 @@ a uma.
 | 2026-10-22 | Reserva, baixa, liberação e devolução provadas em teste puro, incluindo a recusa quando o pedido passa do disponível e a recusa da baixa manual sobre unidade reservada |
 | 2026-10-25 | Billing: `./mvnw clean verify` com 165 testes verdes e cobertura de linha 97,8%; V1.0.0 e V2.0.0 aplicadas pelo Flyway em PostgreSQL 16 real (Testcontainers), com o índice parcial `WHERE sent_at IS NULL` conferido em `pg_indexes` |
 | 2026-10-25 | Billing: o banco real **recusa** o segundo orçamento com o mesmo `work_order_id` e a segunda notificação com a mesma tripla `(payment_id, mp_payment_id, status_detail)` |
+| 2026-10-30 | Execution: `./mvnw clean verify` com 137 testes verdes e cobertura de linha 99,2%; *round-trip* do item `STATE` tocando os 14 campos, e a tabela criada pelo teste de integração com as mesmas chaves e índices do `terraform/dynamodb.tf` |

@@ -99,7 +99,7 @@ consumidor já sabe tratar, porque é *tolerant reader* por contrato.
 | ~~`branchId`~~ | ✅ **entra desde o bloco do domínio do OS**: a abertura recebe a filial, e todo comando do orquestrador a carrega no envelope | — |
 | ~~`complaint`~~ | ✅ **entra desde o bloco do domínio do OS**, no `payload` do `StartDiagnosis` | — |
 | `branchId` **na resposta** | o Execution e o Billing passarem a devolvê-lo nos eventos deles | ausente do envelope **no sentido participante → orquestrador**; o orquestrador não depende dele, porque já conhece a filial da saga |
-| `mechanic` (no `DiagnosisStarted`) | o Execution tiver mecânicos e fila por filial | ausente do `payload` |
+| ~~`mechanic`~~ (no `DiagnosisStarted`) | ✅ **entra desde o bloco do Execution**: o diagnóstico passou a ser iniciado por uma pessoa, e o nome sai do **próprio token** dela (`JsonWebToken.getName()`), nunca de campo da requisição | — |
 
 **`sagaId`.** Gerado quando a saga nasce, junto com a abertura da OS, e devolvido pelos participantes em cada
 resposta. Desde o bloco do orquestrador ele é a chave de `saga_instance`: além de correlacionar os logs, é por
@@ -176,8 +176,26 @@ O padrão entre serviços é assíncrono. Cada chamada síncrona abaixo tem um m
 
 | Quem chama | Quem responde | Para quê | Por que síncrono | Proteções |
 |---|---|---|---|---|
-| Execution | OS (catálogo, leitura) | validar os itens no momento em que o mecânico conclui o diagnóstico | é **feedback a um humano**: item inválido precisa voltar como 400 na hora, não minutos depois | timeout curto + circuit breaker; OS fora do ar → **503** claro ao mecânico e nada muda no processo. Proposta a validar no B6: repassar o JWT do mecânico (*token relay*), sem credencial nova |
+| Execution | OS (`POST /internal/catalog/validate`) | validar **em lote** os itens no momento em que o mecânico conclui o diagnóstico | é **feedback a um humano**: item inválido precisa voltar como 400 na hora, não minutos depois | timeout curto + circuit breaker; OS fora do ar → **503** claro ao mecânico e nada muda no processo. **Autenticação de serviço (`X-Service-Token`), não repasse do JWT do mecânico** — ver a nota abaixo |
 | Lambda de auth | OS (endpoint interno) | saber se o CPF é cliente, sem ler o banco do OS | é o próprio passo de autenticação | fora da allowlist do Gateway + autenticação de serviço na app |
 | Clientes | serviços, via Gateway | consultas e ações de pessoas (abrir OS, aprovar, acompanhar) | interação humana | JWT + allowlist de rotas no Gateway |
 
 Nenhum serviço lê o banco de outro: o Execution pergunta ao OS pela API, e a Lambda também.
+
+ℹ️ **Por que um endpoint interno em lote, e não o repasse do JWT do mecânico.** O desenho original previa
+*token relay*: o Execution reenviaria o `Bearer` do mecânico aos endpoints ADMIN do catálogo
+(`GET /service/{id}` e `GET /parts-and-supplies/{id}`), que já existem. Decidido pelo dono em 2026-10-29 pelo
+caminho do endpoint interno, por três razões:
+
+1. **Uma chamada para N itens.** O mecânico conclui o diagnóstico com a lista inteira; validar item a item faria
+   o *circuit breaker* contar falhas de N chamadas distintas e a latência crescer com o tamanho do diagnóstico.
+2. **Identidade de serviço em vez de credencial de pessoa.** O token do mecânico atravessando a fronteira é um
+   *confused deputy* em potencial; o `X-Service-Token` diz "é o Execution chamando", que é o que a autorização
+   precisa saber.
+3. **A camada já existia.** O `ServiceTokenFilter` (comparação em tempo constante, *fail closed* sem segredo
+   configurado) e o segredo em `/fase4/os/internal/service-token` já eram o padrão do endpoint interno de
+   clientes; o recurso novo mora sob `/internal/`, **fora da allowlist do Gateway**, como ele.
+
+O corpo é `{"items":[{"type":"SERVICE"|"PART","catalogId":N}]}` e a resposta devolve só o que o catálogo **não**
+conhece: `{"invalid":[...]}`. Peça e serviço são catálogos diferentes, e cada `catalogId` é procurado apenas na
+tabela do seu tipo.
