@@ -378,15 +378,30 @@ class SagaOrchestratorTest {
                 sentCommands().stream().map(SagaEnvelope::type).toList());
     }
 
+    // O cancelamento antes de o mecanico iniciar ainda tem o que desfazer: o StartDiagnosis ja saiu e o item
+    // esta na fila da filial. Sem o CancelDiagnosis ele ficaria lá para sempre, e um mecanico pegaria servico
+    // de ordem cancelada.
     @Test
-    void cancelByStaff_beforeTheDiagnosisStarts_cancelsTheWorkOrderRightAway() {
+    void cancelByStaff_beforeTheDiagnosisStarts_asksTheExecutionToCloseTheQueueItem() {
         SagaInstance saga = sagaAt(SagaState.AWAITING_DIAGNOSIS);
 
         orchestrator.cancel(WORK_ORDER, CancelReason.CANCELED_BY_STAFF);
 
+        assertEquals(SagaState.COMPENSATING, saga.getState());
+        assertEquals(List.of(SagaMessageType.CANCEL_DIAGNOSIS),
+                sentCommands().stream().map(SagaEnvelope::type).toList());
+        verify(workOrders, never()).markCanceled(any(), any(), any());
+    }
+
+    @Test
+    void cancelByStaff_beforeTheDiagnosisStarts_cancelsTheWorkOrderOnTheConfirmation() {
+        SagaInstance saga = sagaAt(SagaState.AWAITING_DIAGNOSIS);
+        orchestrator.cancel(WORK_ORDER, CancelReason.CANCELED_BY_STAFF);
+
+        orchestrator.onReply(reply(SagaMessageType.DIAGNOSIS_CANCELED));
+
         assertEquals(SagaState.COMPENSATED, saga.getState());
         verify(workOrders).markCanceled(WORK_ORDER, saga.getSagaId(), CancelReason.CANCELED_BY_STAFF);
-        verify(outbox, never()).append(any());
     }
 
     @Test
