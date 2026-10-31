@@ -3,7 +3,7 @@ package br.com.fiap.postech.carworkshop.saga.domain.entity;
 import java.util.List;
 
 public enum SagaState {
-    AWAITING_DIAGNOSIS(List.of()),
+    AWAITING_DIAGNOSIS(List.of(CompensationStep.CANCEL_DIAGNOSIS)),
     DIAGNOSING(List.of(CompensationStep.CANCEL_DIAGNOSIS)),
     AWAITING_BUDGET(List.of(CompensationStep.CANCEL_DIAGNOSIS)),
     AWAITING_APPROVAL(List.of(

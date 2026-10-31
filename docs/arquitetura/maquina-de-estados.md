@@ -183,10 +183,27 @@ stateDiagram-v2
     DIAGNOSIS_QUEUED --> CANCELED: CancelDiagnosis
     DIAGNOSIS_IN_PROGRESS --> CANCELED: CancelDiagnosis
     DIAGNOSIS_DONE --> CANCELED: CancelDiagnosis
+    REPAIR_QUEUED --> CANCELED: CancelDiagnosis
+    REPAIR_IN_PROGRESS --> CANCELED: CancelDiagnosis
 ```
 
-Cada transição é um `UpdateItem` condicional (`ConditionExpression` no estado atual) no **mesmo**
-`TransactWriteItems` que grava o item de outbox — o padrão provado no spike de 2026-09-29.
+Cada transição é uma escrita condicional (condição no **status e na versão** que a leitura devolveu) no
+**mesmo** `TransactWriteItems` que grava o item de outbox — o padrão provado no spike de 2026-09-29. É um
+`Put` do item inteiro, não um `Update` de campos: assim campo novo do agregado nunca fica de fora da gravação.
+
+**`CancelDiagnosis` responde sempre, de qualquer estado — inclusive de nenhum.** É a regra que mais importa
+neste serviço, e ela não aparece no diagrama porque não é uma transição:
+
+| Situação ao receber `CancelDiagnosis` | O que acontece no item | O que vai para o orquestrador |
+|---|---|---|
+| Nenhum item de execução (o diagnóstico nem foi enfileirado) | nada — só a linha de histórico | `DiagnosisCanceled` |
+| Item num dos cinco estados canceláveis acima | vira `CANCELED`, com o motivo | `DiagnosisCanceled` |
+| Item em `DIAGNOSIS_FAILED`, `REPAIR_FAILED`, `REPAIR_DONE` ou já `CANCELED` | nada — o motivo do fim é preservado | `DiagnosisCanceled` |
+
+Por que de qualquer estado: `CompensationStep.CANCEL_DIAGNOSIS` é o **último passo de toda lista de
+compensação** e espera confirmação do participante. O orquestrador manda `CancelDiagnosis` **depois** de um
+`DiagnosisFailed` e **depois** de um `RepairFailed` — ou seja, justamente quando o item já terminou. Calar
+nesses casos deixaria a saga em `COMPENSATING` para sempre.
 
 ---
 

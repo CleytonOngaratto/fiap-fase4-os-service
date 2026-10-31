@@ -28,9 +28,9 @@ Os documentos nascem junto com o código, um bloco por vez; os que ainda não ex
 | [adr/ADR-007-lambda-sem-banco-do-os.md](adr/ADR-007-lambda-sem-banco-do-os.md) | Por que a Lambda de autenticação consulta um endpoint interno do OS Service em vez de ler a tabela de clientes, e por que a allowlist do Gateway não basta sozinha |
 | [adr/ADR-006-mensageria.md](adr/ADR-006-mensageria.md) | Por que SNS FIFO publicando em SQS FIFO com outbox transacional, o que isso custa (bloqueio de cabeça de fila, idempotência obrigatória) e o que ficou como dívida registrada |
 | [adr/ADR-008-pagamento-mercado-pago.md](adr/ADR-008-pagamento-mercado-pago.md) | Por que **Checkout Pro** e não Checkout API nem Orders API; as quatro chamadas ao provedor; por que o status vem sempre do `GET /v1/payments/{id}`; a chave de idempotência do estorno; o cancelamento *best-effort* e as duas camadas do pagamento que chega depois do cancelamento |
+| [adr/ADR-009-tabela-unica-do-execution.md](adr/ADR-009-tabela-unica-do-execution.md) | Por que **uma tabela só** no DynamoDB do Execution, com estado, histórico, inbox e outbox na mesma partição da ordem de serviço; por que a outbox entra no `TransactWriteItems` em vez de publicar direto; os dois índices secundários; e o que fazer sem `SKIP LOCKED` |
 | `sequencia.md` | *a escrever (B7)* — sequência da Saga: caminho feliz e compensação |
 | `lab-vs-producao.md` | *a escrever (B9)* — o que mudaria fora do AWS Academy, decisão por decisão |
-| ADRs restantes | *a escrever, cada um no bloco que implementa a decisão* — banco do Execution |
 
 ## Onde está cada tema pedido no Tech Challenge
 
@@ -39,9 +39,9 @@ Os documentos nascem junto com o código, um bloco por vez; os que ainda não ex
 | Três ou mais microsserviços independentes, cada um com repositório, infraestrutura e banco próprios | [componentes.md](componentes.md) · [ADR-005](adr/ADR-005-divisao-em-servicos.md) · [Repositórios](#repositórios) |
 | OS Service: abertura, atualização de status, consulta de status e histórico | [maquina-de-estados.md §1](maquina-de-estados.md) · [banco-de-dados.md](banco-de-dados.md) (`work_order_status_history`) |
 | Billing: orçamento para aprovação, pagamentos e atualização da OS após o pagamento | [maquina-de-estados.md §3](maquina-de-estados.md) · [catalogo-de-mensagens.md §3–4](catalogo-de-mensagens.md) · [banco-de-dados.md](banco-de-dados.md) |
-| Execution: fila de execução, status durante diagnóstico e reparo, finalização comunicada ao OS | [maquina-de-estados.md §3](maquina-de-estados.md) · [catalogo-de-mensagens.md §4](catalogo-de-mensagens.md) |
+| Execution: fila de execução, status durante diagnóstico e reparo, finalização comunicada ao OS | [maquina-de-estados.md §3](maquina-de-estados.md) · [catalogo-de-mensagens.md §4](catalogo-de-mensagens.md) · [ADR-009](adr/ADR-009-tabela-unica-do-execution.md) (a fila por filial no índice) |
 | Integração com o Mercado Pago | [ADR-008](adr/ADR-008-pagamento-mercado-pago.md) · [catalogo-de-mensagens.md](catalogo-de-mensagens.md) (cobrança, confirmação e estorno) · [matriz-de-compensacao.md](matriz-de-compensacao.md) (F4–F8) |
-| Banco próprio por serviço, ao menos um SQL e um NoSQL | [banco-de-dados.md](banco-de-dados.md) (Postgres do OS e do Billing; DynamoDB do Execution no bloco dele) |
+| Banco próprio por serviço, ao menos um SQL e um NoSQL | [banco-de-dados.md](banco-de-dados.md) (Postgres do OS e do Billing; DynamoDB do Execution) · [ADR-009](adr/ADR-009-tabela-unica-do-execution.md) |
 | Nenhum serviço acessa o banco de outro | [catalogo-de-mensagens.md §6](catalogo-de-mensagens.md) (o que é síncrono e por quê) · [ADR-002](adr/ADR-002-credencial-dos-pods.md) (isolamento de credenciais no laboratório) · [componentes.md](componentes.md) |
 | Comunicação REST síncrona quando necessário e mensageria assíncrona | [catalogo-de-mensagens.md §1 e §6](catalogo-de-mensagens.md) · [ADR-006](adr/ADR-006-mensageria.md) |
 | Saga com rollback e compensação em qualquer etapa | [matriz-de-compensacao.md](matriz-de-compensacao.md) · [maquina-de-estados.md §2](maquina-de-estados.md) |
@@ -55,6 +55,7 @@ Os documentos nascem junto com o código, um bloco por vez; os que ainda não ex
 2. [maquina-de-estados.md](maquina-de-estados.md) — os estados que a saga move.
 3. [catalogo-de-mensagens.md](catalogo-de-mensagens.md) — as mensagens que movem esses estados.
 4. [matriz-de-compensacao.md](matriz-de-compensacao.md) — o que acontece quando cada etapa falha.
+5. [banco-de-dados.md](banco-de-dados.md) — onde cada estado mora, nos dois Postgres e no DynamoDB.
 
 ## Repositórios
 

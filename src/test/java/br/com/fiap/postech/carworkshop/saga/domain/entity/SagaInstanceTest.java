@@ -104,7 +104,7 @@ class SagaInstanceTest {
         assertEquals(List.of(CompensationStep.CANCEL_DIAGNOSIS),
                 sagaAt(SagaState.DIAGNOSING).beginCompensation(CancelReason.DIAGNOSIS_FAILED));
 
-        assertEquals(List.of(), sagaAt(SagaState.AWAITING_DIAGNOSIS)
+        assertEquals(List.of(CompensationStep.CANCEL_DIAGNOSIS), sagaAt(SagaState.AWAITING_DIAGNOSIS)
                 .beginCompensation(CancelReason.CANCELED_BY_STAFF));
     }
 
