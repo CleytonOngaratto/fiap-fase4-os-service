@@ -14,7 +14,7 @@ class SagaE2eSuite {
                 "--glue", "br.com.fiap.postech.carworkshop.bdd.e2e",
                 "--plugin", "pretty",
                 "--plugin", "html:target/cucumber/e2e.html",
-                "--tags", System.getenv().getOrDefault("E2E_TAGS", "@e2e"),
+                "--tags", "(" + System.getenv().getOrDefault("E2E_TAGS", "@e2e") + ") and @e2e",
                 "classpath:features/saga"}, Thread.currentThread().getContextClassLoader());
 
         assertEquals(0, status);
