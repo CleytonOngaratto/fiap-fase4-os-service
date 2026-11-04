@@ -141,6 +141,7 @@ stateDiagram-v2
         PENDING_APPROVAL --> REJECTED: cliente rejeita
         PENDING_APPROVAL --> CANCELED: CancelBudget
         APPROVED --> CANCELED: CancelBudget
+        REJECTED --> CANCELED: CancelBudget
     }
 ```
 
@@ -159,6 +160,8 @@ stateDiagram-v2
   tem de estar `PENDING_APPROVAL` (**409** se já foi respondido ou cancelado) e o `approval_deadline` não
   pode ter vencido (**409**). A terceira fecha o caso do orçamento órfão: ordem cancelada antes de a saga
   registrar o passo de cancelar o orçamento deixaria um orçamento aprovável para sempre.
+- `REJECTED` não é o fim do orçamento rejeitado: o orquestrador responde ao `BudgetRejected` com `CancelBudget` e
+  `CancelDiagnosis`, e o orçamento termina `CANCELED`, mantendo o motivo `REJECTED_BY_CUSTOMER`.
 - Tentativas recusadas (`rejected` no Mercado Pago) viram linhas em `payment_attempts` e o evento informativo
   `PaymentAttemptRejected`. **Não** mudam o estado do pagamento.
 - `CANCELED → REFUNDED` é o pagamento que chega **depois** de a saga já ter compensado: o Billing estorna

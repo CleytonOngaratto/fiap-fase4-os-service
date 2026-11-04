@@ -19,6 +19,7 @@ import java.util.Map;
 public class SagaMessagingResource implements QuarkusTestResourceLifecycleManager {
 
     public static final String COMMANDS_QUEUE = "execution-commands.fifo";
+    public static final String BILLING_COMMANDS_QUEUE = "billing-commands.fifo";
     public static final String REPLIES_QUEUE = "os-saga-replies.fifo";
 
     private static final DockerImageName ELASTICMQ =
@@ -51,6 +52,7 @@ public class SagaMessagingResource implements QuarkusTestResourceLifecycleManage
         config.put("quarkus.datasource.password", postgres.getPassword());
         config.put("quarkus.sqs.endpoint-override", endpoint);
         config.put("saga.commands.execution.queue-url", queueUrl(endpoint, COMMANDS_QUEUE));
+        config.put("saga.commands.billing.queue-url", queueUrl(endpoint, BILLING_COMMANDS_QUEUE));
         config.put("saga.replies.queue-url", queueUrl(endpoint, REPLIES_QUEUE));
         return config;
     }

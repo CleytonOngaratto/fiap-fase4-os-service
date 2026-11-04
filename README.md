@@ -23,13 +23,14 @@ A escolha de **Saga orquestrada**, com o orquestrador em código aqui dentro, es
 
 ## Deploy
 
-Três workflows, cada um com um papel:
+Quatro workflows, cada um com um papel:
 
 | Workflow | Gatilho | O que faz |
 |---|---|---|
-| [`maven-ci.yml`](.github/workflows/maven-ci.yml) | PR e `push` na `main` | build, testes, JaCoCo, análise no SonarCloud (`build` e `SonarCloud Code Analysis` são checks obrigatórios) e Trivy |
+| [`maven-ci.yml`](.github/workflows/maven-ci.yml) | PR e `push` na `main` | build, testes, JaCoCo, análise no SonarCloud (`build` e `SonarCloud Code Analysis` são checks obrigatórios), os cenários da Saga (`bdd`) e Trivy |
+| [`e2e.yml`](.github/workflows/e2e.yml) | `workflow_dispatch` | os cenários da Saga contra o EKS, pelo Gateway ([Testes](#testes)) |
 | [`terraform.yml`](.github/workflows/terraform.yml) | PR → `fmt-validate` (check obrigatório) + `plan` · `push` na `main` com mudança em `terraform/` → `apply` · `workflow_dispatch` → `plan`/`apply`/`destroy` | a infraestrutura do serviço, em [`terraform/`](terraform/): RDS PostgreSQL, target group `ip` e a regra `/carworkshop/v1/*` no ALB interno da plataforma |
-| [`cd.yml`](.github/workflows/cd.yml) | `push` na `main` (fora `*.md`, `docs/` e `terraform/`) e `workflow_dispatch` | testes → imagem no ECR (tag = SHA do commit) → manifestos no EKS → smoke: alvos `healthy` no target group e, com a borda de pé, `GET /carworkshop/v1/tracking/1` sem token → **401** pelo API Gateway |
+| [`cd.yml`](.github/workflows/cd.yml) | `push` na `main` (fora `*.md`, `docs/` e `terraform/`) e `workflow_dispatch` (com `approval_deadline` e `payment_deadline` opcionais, para os prazos curtos da sessão) | testes → imagem no ECR (tag = SHA do commit) → manifestos no EKS → smoke: alvos `healthy` no target group e, com a borda de pé, `GET /carworkshop/v1/tracking/1` sem token → **401** pelo API Gateway |
 
 **O merge aplica.** Um merge que mude `terraform/` cria ou altera recursos na AWS — só com a sessão do laboratório
 ligada e com o teardown na mesma sessão. Num merge com código e `terraform/` os dois workflows rodam juntos: o
@@ -103,6 +104,39 @@ ambiente. Abrir uma ordem de serviço com tudo de pé é suficiente para ver o o
 
 Não há emulador de tópicos: a publicação no tópico é verificada por teste de contrato e por um dublê da porta de
 saída. Os testes de mensageria sobem os contêineres sozinhos (exigem o Docker em execução).
+
+## Testes
+
+| Comando | O que roda | Onde roda |
+|---|---|---|
+| `./mvnw clean verify` | Testes unitários e de integração, com o gate de cobertura do JaCoCo | job `build` |
+| `./mvnw clean test -Pbdd -Djacoco.skip=true` | Os cenários da Saga, com participantes simulados por fila, contra Postgres e filas FIFO reais em contêiner (exige o Docker) | job `bdd` |
+| `mvn clean test -Pe2e -Djacoco.skip=true` | Os mesmos cenários pelo API Gateway, contra o EKS | [`e2e.yml`](.github/workflows/e2e.yml), por `workflow_dispatch` |
+
+Os cenários estão em [`src/test/resources/features/saga/`](src/test/resources/features/saga), um por linha da
+[matriz de compensação](docs/arquitetura/matriz-de-compensacao.md). As duas execuções compartilham as features e os
+passos; muda só o driver: [`ComponentSagaDriver`](src/test/java/br/com/fiap/postech/carworkshop/bdd/component/ComponentSagaDriver.java)
+fala com as filas e o [`EksSagaDriver`](src/test/java/br/com/fiap/postech/carworkshop/bdd/e2e/EksSagaDriver.java), com o Gateway.
+Só os cenários com a tag `@e2e` rodam no EKS.
+
+**Rodar no EKS** (cobra enquanto a sessão durar). Rode antes o `cd.yml` por dispatch com `approval_deadline=PT2M` e
+`payment_deadline=PT5M`, senão a espera real dos prazos passa do tempo do job, e o pré-voo do `e2e.yml` aborta. O input
+`tags` escolhe o que rodar:
+
+| Tags | Cobre |
+|---|---|
+| `@e2e and not @pagamento and not @infra` | Tudo o que não precisa de ninguém pagando nem derruba pods |
+| `@caminho-feliz` e `@F8` | Exigem um pagamento de teste: o link aparece como aviso no log do job |
+| `@infra` | F9 e F13: escalam o Execution e o OS para 0 réplicas |
+
+Exige os segredos `E2E_ADMIN_USERNAME` e `E2E_ADMIN_PASSWORD` no repositório. O signup do primeiro ADMIN é idempotente e
+passa por `port-forward`, porque essa rota fica fora do Gateway.
+
+### Se o `bdd` travar a `main`
+
+O `bdd` é check obrigatório, e o ruleset não tem `bypass`: um job travado bloqueia **todo** PR deste repositório. Se ele
+falhar sem causa no código, rode `gh run rerun --failed <id>` uma vez e investigue. **Quem decide tirar o `bdd` do ruleset é
+o dono do repositório**, pela tela do ruleset, que mexe só nesse campo. O check volta assim que o motivo for consertado.
 
 ## Contrato no SSM
 
