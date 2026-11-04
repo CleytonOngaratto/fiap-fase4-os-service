@@ -29,7 +29,8 @@ Os documentos nascem junto com o código, um bloco por vez; os que ainda não ex
 | [adr/ADR-006-mensageria.md](adr/ADR-006-mensageria.md) | Por que SNS FIFO publicando em SQS FIFO com outbox transacional, o que isso custa (bloqueio de cabeça de fila, idempotência obrigatória) e o que ficou como dívida registrada |
 | [adr/ADR-008-pagamento-mercado-pago.md](adr/ADR-008-pagamento-mercado-pago.md) | Por que **Checkout Pro** e não Checkout API nem Orders API; as quatro chamadas ao provedor; por que o status vem sempre do `GET /v1/payments/{id}`; a chave de idempotência do estorno; o cancelamento *best-effort* e as duas camadas do pagamento que chega depois do cancelamento |
 | [adr/ADR-009-tabela-unica-do-execution.md](adr/ADR-009-tabela-unica-do-execution.md) | Por que **uma tabela só** no DynamoDB do Execution, com estado, histórico, inbox e outbox na mesma partição da ordem de serviço; por que a outbox entra no `TransactWriteItems` em vez de publicar direto; os dois índices secundários; e o que fazer sem `SKIP LOCKED` |
-| `sequencia.md` | *a escrever (B7)* — sequência da Saga: caminho feliz e compensação |
+| [sequencia.md](sequencia.md) | Sequência da Saga: caminho feliz, compensação depois do pagamento e cancelamento pelo atendimento; e o que a "ordem" das compensações quer dizer de verdade |
+| [runbook-redrive-dlq.md](runbook-redrive-dlq.md) | O que fazer quando uma mensagem para numa DLQ: identificar, classificar, reenviar e verificar, e por que o reenvio é seguro |
 | `lab-vs-producao.md` | *a escrever (B9)* — o que mudaria fora do AWS Academy, decisão por decisão |
 
 ## Onde está cada tema pedido no Tech Challenge
@@ -46,7 +47,7 @@ Os documentos nascem junto com o código, um bloco por vez; os que ainda não ex
 | Comunicação REST síncrona quando necessário e mensageria assíncrona | [catalogo-de-mensagens.md §1 e §6](catalogo-de-mensagens.md) · [ADR-006](adr/ADR-006-mensageria.md) |
 | Saga com rollback e compensação em qualquer etapa | [matriz-de-compensacao.md](matriz-de-compensacao.md) · [maquina-de-estados.md §2](maquina-de-estados.md) |
 | Saga orquestrada ou coreografada, com a escolha justificada | [ADR-001](adr/ADR-001-saga-orquestrada.md) |
-| Diagrama geral e sequência da Saga | [componentes.md](componentes.md) · `sequencia.md` (B7) |
+| Diagrama geral e sequência da Saga | [componentes.md](componentes.md) · [sequencia.md](sequencia.md) |
 | Rastreamento dos fluxos distribuídos | [catalogo-de-mensagens.md §2](catalogo-de-mensagens.md) (`correlationId` e `sagaId` em toda mensagem) |
 
 ## Ordem de leitura sugerida
@@ -55,7 +56,8 @@ Os documentos nascem junto com o código, um bloco por vez; os que ainda não ex
 2. [maquina-de-estados.md](maquina-de-estados.md) — os estados que a saga move.
 3. [catalogo-de-mensagens.md](catalogo-de-mensagens.md) — as mensagens que movem esses estados.
 4. [matriz-de-compensacao.md](matriz-de-compensacao.md) — o que acontece quando cada etapa falha.
-5. [banco-de-dados.md](banco-de-dados.md) — onde cada estado mora, nos dois Postgres e no DynamoDB.
+5. [sequencia.md](sequencia.md) — os mesmos fluxos no tempo, entre os serviços.
+6. [banco-de-dados.md](banco-de-dados.md) — onde cada estado mora, nos dois Postgres e no DynamoDB.
 
 ## Repositórios
 
