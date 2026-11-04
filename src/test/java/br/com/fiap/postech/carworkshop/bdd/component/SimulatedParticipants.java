@@ -34,7 +34,6 @@ class SimulatedParticipants {
     private String paymentStatus = NOTHING_YET;
     private String budgetId;
     private String lastReply;
-    private UUID lastReplyId;
 
     SimulatedParticipants(SagaBench bench, String correlationId) {
         this.bench = bench;
@@ -90,7 +89,7 @@ class SimulatedParticipants {
     }
 
     UUID lastReplyId() {
-        return lastReplyId;
+        return UUID.fromString(bench.parse(lastReply).path("messageId").asText());
     }
 
     List<String> executionCommands() {
@@ -216,8 +215,13 @@ class SimulatedParticipants {
     }
 
     void paymentConfirmed(String paymentId) {
+        bench.sendReply(paymentConfirmedEnvelope(paymentId), workOrderId);
+    }
+
+    String paymentConfirmedEnvelope(String paymentId) {
         paymentStatus = "CONFIRMED";
-        reply("PaymentConfirmed", payload().put("paymentId", paymentId));
+        lastReply = envelope("PaymentConfirmed", payload().put("paymentId", paymentId), workOrderId);
+        return lastReply;
     }
 
     void repairStarted() {
@@ -246,9 +250,8 @@ class SimulatedParticipants {
     }
 
     String envelope(String type, ObjectNode payload, long targetWorkOrder) {
-        lastReplyId = UUID.randomUUID();
         return bench.newObject()
-                .put("messageId", lastReplyId.toString())
+                .put("messageId", UUID.randomUUID().toString())
                 .put("type", type)
                 .put("version", 1)
                 .put("occurredAt", Instant.now().toString())

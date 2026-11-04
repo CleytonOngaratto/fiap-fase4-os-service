@@ -25,12 +25,16 @@ import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
 
 @Unremovable
 @ApplicationScoped
 public class SagaBench {
+
+    static final List<String> COMPENSATIONS =
+            List.of("CancelDiagnosis", "CancelBudget", "CancelPayment", "RefundPayment");
 
     private static final String REPLIES_DLQ = "os-saga-replies-dlq.fifo";
     private static final String EXECUTION_DLQ = "execution-commands-dlq.fifo";
@@ -90,8 +94,20 @@ public class SagaBench {
         deadlines.scan();
     }
 
-    void applyInTheCurrentTransaction(String envelope) {
-        handler.apply(parse(envelope));
+    // Abre a transacao da resposta, deixa a varredura comitar antes dela e so entao comita: em uma thread so, e a
+    // ordem que a corrida entre prazo e evento produz em producao. O finally evita vazar a transacao para o proximo
+    // cenario quando a falha acontece antes do commit.
+    void commitAfterTheDeadlineScan(String envelope) {
+        QuarkusTransaction.begin();
+        try {
+            handler.apply(parse(envelope));
+            QuarkusTransaction.requiringNew().run(this::scanDeadlines);
+            QuarkusTransaction.commit();
+        } finally {
+            if (QuarkusTransaction.isActive()) {
+                QuarkusTransaction.rollback();
+            }
+        }
     }
 
     JsonNode parse(String body) {
@@ -137,27 +153,22 @@ public class SagaBench {
         return depth(queueUrl, QueueAttributeName.APPROXIMATE_NUMBER_OF_MESSAGES);
     }
 
-    int repliesInTheQueue() {
-        return depth(repliesQueueUrl, QueueAttributeName.APPROXIMATE_NUMBER_OF_MESSAGES)
-                + depth(repliesQueueUrl, QueueAttributeName.APPROXIMATE_NUMBER_OF_MESSAGES_NOT_VISIBLE);
-    }
-
-    int repliesDeadLettered() {
-        return depth(dlqUrl(REPLIES_DLQ), QueueAttributeName.APPROXIMATE_NUMBER_OF_MESSAGES);
-    }
-
     int deadLettered() {
-        return repliesDeadLettered()
+        return depth(dlqUrl(REPLIES_DLQ), QueueAttributeName.APPROXIMATE_NUMBER_OF_MESSAGES)
                 + depth(dlqUrl(EXECUTION_DLQ), QueueAttributeName.APPROXIMATE_NUMBER_OF_MESSAGES)
                 + depth(dlqUrl(BILLING_DLQ), QueueAttributeName.APPROXIMATE_NUMBER_OF_MESSAGES);
     }
 
-    Message receiveDeadLetteredReply() {
+    Optional<Message> waitForDeadLetteredReply() {
         return sqs.receiveMessage(ReceiveMessageRequest.builder()
                 .queueUrl(dlqUrl(REPLIES_DLQ))
                 .maxNumberOfMessages(1)
-                .build()).messages().stream().findFirst()
-                .orElseThrow(() -> new AssertionError("nenhuma resposta na DLQ"));
+                .waitTimeSeconds(1)
+                .build()).messages().stream().findFirst();
+    }
+
+    void deleteDeadLetteredReply(Message message) {
+        delete(dlqUrl(REPLIES_DLQ), message);
     }
 
     private int depth(String queueUrl, QueueAttributeName attribute) {
@@ -210,11 +221,13 @@ public class SagaBench {
                 .getSingleResult());
     }
 
-    UUID sagaId(long workOrderId) {
+    List<String> compensationsIssued(long workOrderId) {
         return read(() -> entityManager
-                .createQuery("select s.sagaId from SagaInstanceJpaEntity s where s.workOrderId = :id", UUID.class)
+                .createQuery("select o.type from SagaOutboxJpaEntity o where o.workOrderId = :id "
+                        + "and o.type in :compensations", String.class)
                 .setParameter("id", workOrderId)
-                .getSingleResult());
+                .setParameter("compensations", COMPENSATIONS)
+                .getResultStream().sorted().toList());
     }
 
     String workOrderStatus(long workOrderId) {

@@ -48,7 +48,6 @@ class ComponentSagaDriver implements SagaDriver {
     private long partId;
     private JsonPath catalogAnswer;
     private boolean stuckCompensationExpected;
-    private boolean deadLetterExpected;
 
     ComponentSagaDriver(SagaBench bench, String correlationId) {
         this.bench = bench;
@@ -69,8 +68,8 @@ class ComponentSagaDriver implements SagaDriver {
         return workOrderId;
     }
 
-    void expectDeadLetter() {
-        deadLetterExpected = true;
+    String paymentIdAtTheProvider() {
+        return "provedor-" + workOrderId;
     }
 
     void settle() {
@@ -176,7 +175,7 @@ class ComponentSagaDriver implements SagaDriver {
 
     @Override
     public void pay() {
-        participants.paymentConfirmed("provedor-" + workOrderId);
+        participants.paymentConfirmed(paymentIdAtTheProvider());
         settle();
     }
 
@@ -300,12 +299,7 @@ class ComponentSagaDriver implements SagaDriver {
 
     @Override
     public void assertDiagnosisRequestWaiting() {
-        settleWithoutTheExecution();
         assertTrue(bench.waitingOn(bench.executionQueueUrl()) >= 1, "StartDiagnosis devia esperar na fila do Execution");
-    }
-
-    private void settleWithoutTheExecution() {
-        bench.drainOutbox();
     }
 
     @Override
@@ -316,9 +310,7 @@ class ComponentSagaDriver implements SagaDriver {
     void assertScenarioInvariants() {
         settle();
         assertEquals(0L, bench.pendingOutbox(), "nenhum comando pode ficar preso no outbox");
-        if (!deadLetterExpected) {
-            assertEquals(0, bench.deadLettered(), "nenhuma mensagem deste cenario podia parar numa DLQ");
-        }
+        assertEquals(0, bench.deadLettered(), "nenhuma mensagem deste cenario podia ficar numa DLQ");
         if (workOrderId == null) {
             return;
         }
