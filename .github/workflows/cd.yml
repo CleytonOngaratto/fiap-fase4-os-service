@@ -5,6 +5,15 @@ on:
     branches: [ "main" ]
     paths-ignore: [ "**.md", "docs/**", "terraform/**" ]
   workflow_dispatch:
+    inputs:
+      approval_deadline:
+        description: 'Prazo de aprovacao desta sessao, ex.: PT2M. Vazio mantem o do configmap.'
+        required: false
+        type: string
+      payment_deadline:
+        description: 'Prazo de pagamento desta sessao, ex.: PT5M. Vazio mantem o do configmap.'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -27,6 +36,19 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Validate the session deadlines
+        env:
+          APPROVAL_DEADLINE: ${{ inputs.approval_deadline }}
+          PAYMENT_DEADLINE: ${{ inputs.payment_deadline }}
+        run: |
+          set -euo pipefail
+          for value in "$APPROVAL_DEADLINE" "$PAYMENT_DEADLINE"; do
+            if [ -n "$value" ] && ! [[ "$value" =~ ^PT[0-9]+[HMS]$ ]]; then
+              echo "::error::Prazo invalido: '$value'. Use um unico componente, como PT2M ou PT48H; PT1H30M e valido no Quarkus, mas esta guarda recusa de proposito."
+              exit 1
+            fi
+          done
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -185,6 +207,9 @@ jobs:
 
       # Ordem importa: apply -f <dir> é alfabético, e o ConfigMap precisa existir antes do Deployment.
       - name: Apply Namespace, ServiceAccount and ConfigMap
+        env:
+          APPROVAL_DEADLINE: ${{ inputs.approval_deadline }}
+          PAYMENT_DEADLINE: ${{ inputs.payment_deadline }}
         run: |
           set -euo pipefail
           kubectl apply -f "$MANIFESTS/namespace.yaml"
@@ -197,9 +222,27 @@ jobs:
               exit 1
             fi
           done
+
+          # sed sem casamento e silencioso: sem esta guarda, o prazo pedido nao mudaria e o deploy sairia verde.
+          for key in SAGA_APPROVAL_DEADLINE SAGA_PAYMENT_DEADLINE; do
+            if ! grep -q "^  $key:" "$MANIFESTS/configmap.yaml"; then
+              echo "::error::configmap.yaml sem a chave $key - o prazo do dispatch nao teria efeito."
+              exit 1
+            fi
+          done
+
+          deadlines=()
+          if [ -n "$APPROVAL_DEADLINE" ]; then
+            deadlines+=(-e "s|^  SAGA_APPROVAL_DEADLINE:.*|  SAGA_APPROVAL_DEADLINE: $APPROVAL_DEADLINE|")
+          fi
+          if [ -n "$PAYMENT_DEADLINE" ]; then
+            deadlines+=(-e "s|^  SAGA_PAYMENT_DEADLINE:.*|  SAGA_PAYMENT_DEADLINE: $PAYMENT_DEADLINE|")
+          fi
+
           sed -e "s|__EXECUTION_COMMANDS_QUEUE_URL__|${COMMANDS_QUEUE_URL}|" \
               -e "s|__BILLING_COMMANDS_QUEUE_URL__|${BILLING_COMMANDS_QUEUE_URL}|" \
               -e "s|__SAGA_REPLIES_QUEUE_URL__|${SAGA_REPLIES_QUEUE_URL}|" \
+              "${deadlines[@]}" \
             "$MANIFESTS/configmap.yaml" | kubectl apply -f -
 
       # Um único step: o GITHUB_ENV de um step fica legível pelos seguintes.
@@ -368,6 +411,10 @@ jobs:
       - name: Deployment summary
         if: success()
         run: |
+          deadline() {
+            kubectl -n "$NAMESPACE" get configmap "$APP_NAME-config" -o "jsonpath={.data.$1}"
+          }
+
           {
             echo "### Deploy no EKS"
             echo ""
@@ -376,6 +423,8 @@ jobs:
             echo "| Imagem | \`$IMAGE\` |"
             echo "| Cluster | \`$CLUSTER_NAME\` |"
             echo "| Namespace | \`$NAMESPACE\` |"
+            echo "| Prazo de aprovacao | \`$(deadline SAGA_APPROVAL_DEADLINE)\` |"
+            echo "| Prazo de pagamento | \`$(deadline SAGA_PAYMENT_DEADLINE)\` |"
             echo ""
             echo '```'
             kubectl -n "$NAMESPACE" get pods,svc,hpa,targetgroupbindings
