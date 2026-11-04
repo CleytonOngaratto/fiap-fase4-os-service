@@ -1,0 +1,209 @@
+name: E2E - Saga scenarios against EKS
+
+on:
+  workflow_dispatch:
+    inputs:
+      tags:
+        description: 'Expressao de tags do Cucumber. Ex.: @e2e and not @pagamento and not @infra'
+        required: false
+        default: '@e2e'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-os
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  KUBECTL_VERSION: v1.35.9
+  E2E_OS_NAMESPACE: os
+  E2E_OS_DEPLOYMENT: car-workshop-api
+  E2E_OS_CONFIGMAP: car-workshop-api-config
+  E2E_EXECUTION_NAMESPACE: execution
+  E2E_EXECUTION_DEPLOYMENT: execution-service
+  LONGEST_DEADLINE_SECONDS: 600
+  DEADLINE_MARGIN_SECONDS: 60
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Lab session expirada?
+        if: failure()
+        run: |
+          echo "::error::Credencial do AWS Academy expirou ou esta invalida (a sessao dura ~4h)."
+          echo "::error::Abra o lab, atualize ~/.aws/credentials e rode, no repo de plataforma:"
+          echo "::error::  fiap-fase4-infra-k8s/scripts/refresh-gh-secrets.ps1 -Org CleytonOngaratto"
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4.0.1
+        with:
+          version: ${{ env.KUBECTL_VERSION }}
+
+      - name: Read the contract from SSM
+        run: |
+          set -euo pipefail
+
+          read_param() {
+            local value
+            if ! value=$(aws ssm get-parameter --name "$1" --query Parameter.Value --output text); then
+              echo "::error::SSM: parametro '$1' ausente ou ilegivel; o erro da AWS esta logo acima." >&2
+              return 1
+            fi
+            printf '%s' "$value"
+          }
+
+          gateway=$(read_param /fase4/apigw/url)
+          cluster=$(read_param /fase4/eks/cluster-name)
+          execution_commands=$(read_param /fase4/execution/sqs/commands-queue-url)
+          billing_commands=$(read_param /fase4/billing/sqs/commands-queue-url)
+
+          # A DLQ nao tem parametro proprio no contrato: o nome sai da politica de redrive da fila publicada.
+          redrive=$(aws sqs get-queue-attributes --queue-url "$billing_commands" \
+                    --attribute-names RedrivePolicy --query Attributes.RedrivePolicy --output text)
+          billing_dlq_name=$(jq -r '.deadLetterTargetArn | split(":") | last' <<< "$redrive")
+          billing_dlq=$(aws sqs get-queue-url --queue-name "$billing_dlq_name" --query QueueUrl --output text)
+
+          {
+            echo "E2E_GATEWAY_URL=$gateway"
+            echo "CLUSTER_NAME=$cluster"
+            echo "E2E_EXECUTION_COMMANDS_QUEUE_URL=$execution_commands"
+            echo "E2E_BILLING_DLQ_URL=$billing_dlq"
+          } >> "$GITHUB_ENV"
+
+          echo "gateway        : $gateway"
+          echo "cluster        : $cluster"
+          echo "fila execution : $execution_commands"
+          echo "dlq billing    : $billing_dlq"
+
+      - name: Configure kubeconfig
+        run: |
+          set -euo pipefail
+          aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION"
+          kubectl config current-context
+
+      # Um push no meio da sessao volta os prazos para PT48H/PT30M, e a espera real de @prazo nunca terminaria.
+      - name: Preflight - deadlines in effect
+        env:
+          TAGS: ${{ inputs.tags }}
+        run: |
+          set -euo pipefail
+
+          read_config() {
+            kubectl -n "$E2E_OS_NAMESPACE" get configmap "$E2E_OS_CONFIGMAP" -o "jsonpath={.data.$1}"
+          }
+
+          to_seconds() {
+            if ! [[ "$1" =~ ^(PT)?([0-9]+)([HMShms])$ ]]; then
+              echo "::error::Prazo '$1' fora do formato esperado (um unico componente, como PT2M ou 30s)." >&2
+              return 1
+            fi
+            case "${BASH_REMATCH[3]^^}" in
+              H) echo $((BASH_REMATCH[2] * 3600)) ;;
+              M) echo $((BASH_REMATCH[2] * 60)) ;;
+              S) echo "${BASH_REMATCH[2]}" ;;
+            esac
+          }
+
+          approval=$(read_config SAGA_APPROVAL_DEADLINE)
+          payment=$(read_config SAGA_PAYMENT_DEADLINE)
+          scan=$(read_config SAGA_DEADLINE_SCAN_INTERVAL)
+
+          approval_seconds=$(to_seconds "$approval")
+          payment_seconds=$(to_seconds "$payment")
+          scan_seconds=$(to_seconds "$scan")
+
+          echo "prazo de aprovacao : $approval"
+          echo "prazo de pagamento : $payment"
+          echo "varredura          : $scan"
+
+          case "$TAGS" in
+            *"not @prazo"*) ;;
+            *)
+              if [ "$approval_seconds" -gt "$LONGEST_DEADLINE_SECONDS" ] \
+                 || [ "$payment_seconds" -gt "$LONGEST_DEADLINE_SECONDS" ]; then
+                echo "::error::Prazos em vigor $approval e $payment: longos demais para a espera real de @prazo."
+                echo "::error::Rode o cd.yml por dispatch com approval_deadline=PT2M e payment_deadline=PT5M, ou exclua com 'and not @prazo'."
+                exit 1
+              fi
+              ;;
+          esac
+
+          {
+            echo "E2E_APPROVAL_WAIT_SECONDS=$((approval_seconds + scan_seconds + DEADLINE_MARGIN_SECONDS))"
+            echo "E2E_PAYMENT_WAIT_SECONDS=$((payment_seconds + scan_seconds + DEADLINE_MARGIN_SECONDS))"
+          } >> "$GITHUB_ENV"
+
+      # O signup fica fora da allowlist do Gateway: o primeiro ADMIN nasce por dentro do cluster.
+      - name: Ensure the first administrator
+        env:
+          E2E_ADMIN_USERNAME: ${{ secrets.E2E_ADMIN_USERNAME }}
+          E2E_ADMIN_PASSWORD: ${{ secrets.E2E_ADMIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          kubectl -n "$E2E_OS_NAMESPACE" port-forward "deployment/$E2E_OS_DEPLOYMENT" 18080:8080 > /dev/null &
+          forward=$!
+          trap 'kill "$forward"' EXIT
+
+          for _ in $(seq 1 30); do
+            if curl -s -o /dev/null -m 2 "localhost:18080/carworkshop/v1/q/health/ready"; then
+              break
+            fi
+            sleep 1
+          done
+
+          code=$(jq -n --arg username "$E2E_ADMIN_USERNAME" --arg password "$E2E_ADMIN_PASSWORD" \
+                   '{username: $username, password: $password}' \
+                 | curl -s -o /dev/null -m 15 -w '%{http_code}' -H 'Content-Type: application/json' -d @- \
+                     "localhost:18080/carworkshop/v1/auth/signup")
+
+          case "$code" in
+            201) echo "primeiro ADMIN criado" ;;
+            403) echo "ja existe ADMIN: o e2e so faz login" ;;
+            *)
+              echo "::error::Signup pelo port-forward devolveu $code (esperado 201 ou 403)."
+              exit 1
+              ;;
+          esac
+
+      - name: Run the saga scenarios
+        env:
+          E2E_TAGS: ${{ inputs.tags }}
+          E2E_ADMIN_USERNAME: ${{ secrets.E2E_ADMIN_USERNAME }}
+          E2E_ADMIN_PASSWORD: ${{ secrets.E2E_ADMIN_PASSWORD }}
+        run: mvn -B clean test -Pe2e -Djacoco.skip=true
+
+      - name: Upload the Cucumber report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cucumber-e2e-report
+          path: target/cucumber
+          retention-days: 30
