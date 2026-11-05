@@ -45,6 +45,7 @@ public class AuthController {
     @Path("/login")
     @Operation(summary = "Authenticate and obtain a JWT token")
     public Response login(LoginRequest request) {
+        if (request == null) throw new BadRequestException("Request body is required.");
         AuthTokenResponse token = useCase.login(request);
         return Response.ok(token).build();
     }

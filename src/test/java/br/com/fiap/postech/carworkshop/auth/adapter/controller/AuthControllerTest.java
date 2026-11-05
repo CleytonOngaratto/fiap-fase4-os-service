@@ -137,4 +137,12 @@ class AuthControllerTest {
         given().contentType(MediaType.APPLICATION_JSON).body(loginRequest)
                 .when().post("/auth/login").then().statusCode(400);
     }
+
+    @Test
+    void login_nullBody_isRejected() {
+        given().contentType(MediaType.APPLICATION_JSON)
+                .when().post("/auth/login").then().statusCode(400);
+
+        Mockito.verifyNoInteractions(useCase);
+    }
 }
