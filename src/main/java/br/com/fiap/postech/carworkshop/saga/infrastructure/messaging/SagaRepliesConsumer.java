@@ -48,7 +48,7 @@ public class SagaRepliesConsumer {
         }
     }
 
-    private void consume(Message message) {
+    void consume(Message message) {
         JsonNode envelope;
         try {
             envelope = codec.decode(message.body());
@@ -58,9 +58,14 @@ public class SagaRepliesConsumer {
             return;
         }
 
-        String correlationId = envelope.path(SagaEnvelopeCodec.FIELD_CORRELATION_ID).asText(null);
+        try (LogContext ignored = LogContext.of(textOf(envelope, SagaEnvelopeCodec.FIELD_CORRELATION_ID),
+                sagaIdOf(envelope), textOf(envelope, SagaEnvelopeCodec.FIELD_BRANCH_ID))) {
+            apply(message, envelope);
+        }
+    }
 
-        try (LogContext ignored = LogContext.of(correlationId, sagaIdOf(envelope))) {
+    private void apply(Message message, JsonNode envelope) {
+        try {
             handler.apply(envelope);
             sqs.deleteMessage(DeleteMessageRequest.builder()
                     .queueUrl(repliesQueueUrl)
@@ -69,6 +74,10 @@ public class SagaRepliesConsumer {
         } catch (RuntimeException e) {
             log.error("Saga reply failed; leaving it for the redrive policy.", e);
         }
+    }
+
+    private static String textOf(JsonNode envelope, String field) {
+        return envelope.path(field).asText(null);
     }
 
     // O sagaId so alimenta o log: um valor malformado nao pode derrubar o processamento da mensagem.

@@ -68,7 +68,7 @@ public class OutboxRelayService {
         Set<String> configured = queues.keySet().stream().map(Enum::name).collect(Collectors.toSet());
         List<SagaOutboxJpaEntity> pending = repository.claimPending(configured, batchSize);
         for (SagaOutboxJpaEntity row : pending) {
-            try (LogContext ignored = LogContext.of(row.getCorrelationId(), row.getSagaId())) {
+            try (LogContext ignored = LogContext.of(row.getCorrelationId(), row.getSagaId(), row.getBranchId())) {
                 sqs.sendMessage(requestFor(row));
                 row.setSentAt(Instant.now());
                 log.info("Outbox message {} sent for Work Order {}.", row.getType(), row.getWorkOrderId());
