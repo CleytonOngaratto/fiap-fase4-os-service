@@ -73,17 +73,22 @@ Dois detalhes que o desenho exige e que não são opcionais:
 **Negativas (aceitas e mitigadas)**
 
 - **Bloqueio de cabeça de fila:** enquanto uma mensagem de um grupo não é apagada, as seguintes **do mesmo
-  grupo** esperam. É o comportamento desejado numa saga — mas obriga tentativas e *visibility timeout*
-  pequenos, para que uma mensagem travada não segure a ordem de serviço por muito tempo.
+  grupo** que ainda não foram entregues esperam. É o comportamento desejado numa saga — mas obriga tentativas e
+  *visibility timeout* pequenos, para que uma mensagem travada não segure a ordem de serviço por muito tempo.
+- **Risco conhecido, aceito em 2026-11-05: a ordem não é estrita dentro de um lote.** Os consumidores recebem até
+  10 mensagens por vez e seguem depois de uma falha, então o que veio no mesmo lote é processado mesmo com a mensagem
+  da frente falhando. Medido no EKS: na falha do reparo, o `CancelBudget` concluiu durante as retentativas do
+  `RefundPayment`. Entre compensações isso não muda o resultado, porque a ordem entre elas não é regra de negócio
+  ([`sequencia.md`](../sequencia.md)). No caminho de ida, duas mensagens da mesma ordem de serviço no mesmo lote, com a
+  primeira falhando, seriam processadas fora de ordem: é hipótese, não medição. Ordem estrita exigiria lote de 1
+  (`batch-size=1`), ao custo de vazão.
 - **Idempotência é obrigação do consumidor**, não um presente da fila.
 - **Limite de dez atributos por mensagem.** O envelope usa quatro; os de rastreamento distribuído somam mais
   três. Fica pouca folga, e isso é registrado para quando a observabilidade distribuída crescer.
 - **O relay é mais uma peça para operar:** se ele parar, nada é publicado, embora nada se perca. A fila de
   pendentes do outbox é um sinal direto disso.
-- **Simplificação assumida no esqueleto:** o Execution publica **direto no tópico**, sem outbox, porque o
-  outbox dele depende do banco que entra no bloco seguinte. Enquanto isso, a reentrega do comando é absorvida
-  por uma deduplicação **determinística**, derivada do próprio comando — o mesmo comando sempre produz o mesmo
-  identificador de evento. É uma dívida registrada, não um descuido.
+- **Simplificação do esqueleto, já resolvida:** o Execution publicou direto no tópico até ter banco. Hoje ele usa
+  outbox na tabela única ([ADR-009](ADR-009-tabela-unica-do-execution.md)).
 
 ## Em produção, o que poderia mudar
 
