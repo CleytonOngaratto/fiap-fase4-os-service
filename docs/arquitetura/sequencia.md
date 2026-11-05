@@ -88,8 +88,8 @@ sequenceDiagram
 
 **Se o estorno for recusado (F8):** o Billing não responde, a mensagem esgota as tentativas e vai para a
 `billing-commands-dlq`, e a saga fica visível em `COMPENSATING` com `REFUND_PAYMENT` pendente, sem desistir. O
-`CancelBudget` está no mesmo grupo FIFO e só anda depois que o `RefundPayment` sai da frente. Quem resolve é o
-[runbook de redrive](runbook-redrive-dlq.md).
+`CancelBudget` não depende dele: no EKS, em 2026-11-05, o orçamento foi cancelado enquanto o estorno ainda estava na
+segunda tentativa. Quem resolve o estorno é o [runbook de redrive](runbook-redrive-dlq.md).
 
 ## Cancelamento pelo atendimento
 
@@ -135,7 +135,8 @@ grava todos os comandos na mesma transação
 `compensate`) e não aguarda a confirmação de um para mandar o seguinte. Daí três consequências:
 
 - **Entre filas não há ordem:** o Execution pode confirmar o `CancelDiagnosis` antes de o Billing começar o estorno.
-- **Dentro de uma fila a ordem vale**, porque o grupo FIFO é a própria OS. O relay envia por `occurred_at`, que tem
+- **Dentro de uma fila a ordem de entrega vale**, porque o grupo FIFO é a própria OS. O consumidor lê em lotes e segue
+  depois de uma falha, então a falha de uma mensagem não segura as que vieram no mesmo lote. O relay envia por `occurred_at`, que tem
   resolução de 1 µs no Linux dos pods. Medido em 2026-11-03 com JDK 17: `Instant.now()` salta de 1 em 1 µs no Linux e
   a cada ~500 µs no Windows, onde dois comandos seguidos empatam. Por isso a ordem de emissão é provada no
   [`SagaOrchestratorTest`](../../src/test/java/br/com/fiap/postech/carworkshop/saga/usecase/interactor/SagaOrchestratorTest.java),
@@ -151,3 +152,6 @@ A ordem entre comandos do mesmo participante não é regra de negócio: no Billi
 Verificado em 2026-11-03: os três fluxos executados em
 [`src/test/resources/features/saga/`](../../src/test/resources/features/saga), com participantes simulados por fila,
 contra Postgres e filas FIFO reais em contêiner.
+
+Executado no EKS em 2026-11-05: caminho feliz e F6 com pagamento real no ambiente de teste do provedor, e o cancelamento nos
+três estados. Execuções e estado final em [`matriz-de-compensacao.md`](matriz-de-compensacao.md#execução-no-eks).

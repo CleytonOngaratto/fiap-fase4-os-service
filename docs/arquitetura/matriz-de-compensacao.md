@@ -83,6 +83,37 @@ calar nesse caso deixaria a saga em `COMPENSATING` para sempre.
 > abandonada. É a diferença que esta matriz existe para garantir: compensação é **retentável**, nunca
 > desistível. O detalhe da recusa está no [ADR-008](adr/ADR-008-pagamento-mercado-pago.md).
 
+## Execução no EKS
+
+Medido em 2026-11-05, pelo Gateway real, com aprovação em `PT2M`, pagamento em `PT5M` e varredura de `30s`. Cada passo saiu no
+log do GitHub Actions com o `correlationId` `EVIDENCIA-B7-<execução>-<linha do cenário>`.
+
+| Execução do `e2e.yml` | Tags | Linhas da matriz | Cenários | Passos |
+|---|---|---|---|---|
+| [41943726930](https://github.com/CleytonOngaratto/fiap-fase4-os-service/actions/runs/41943726930) | `@F0a` | F0a | 1 | 6 |
+| [41943933716](https://github.com/CleytonOngaratto/fiap-fase4-os-service/actions/runs/41943933716) | `@e2e and not @pagamento and not @infra` | F0a, F1, F2, F3, F4, F9b ×3, F9c, F12 | 10 | 60 |
+| [41945434098](https://github.com/CleytonOngaratto/fiap-fase4-os-service/actions/runs/41945434098) | `@caminho-feliz` | Caminho feliz | 1 | 21 |
+| [41946206096](https://github.com/CleytonOngaratto/fiap-fase4-os-service/actions/runs/41946206096) | `@F8` | F6, F8 | 1 | 8 |
+| [41947002616](https://github.com/CleytonOngaratto/fiap-fase4-os-service/actions/runs/41947002616) | `@infra` | F9, F13 | 2 | 18 |
+
+São 14 cenários distintos, todos verdes: o `@F0a` rodou sozinho primeiro e de novo na bateria. F0b, F5, F7, F10 e F11 ficam só
+no componente, pelos motivos da coluna "Como provar".
+
+**Estado final**, lido no banco de cada serviço e nas filas, depois das execuções:
+
+| O que se mediu | Resultado |
+|---|---|
+| Sagas | 13 `COMPENSATED`, 1 `COMPLETED` e 1 `COMPENSATING` |
+| A saga que ficou aberta | OS 13, `REPAIR_FAILED`, `REFUND_PAYMENT` pendente: a F6 termina no estado da F8, porque a sandbox recusa todo estorno |
+| OS | 13 `CANCELED`, 1 `DELIVERED` e 1 `IN_PROGRESS` (a OS 13) |
+| Outbox pendente | OS 0 de 54, Billing 0 de 30, Execution 0 de 43 |
+| Comandos com `occurred_at` empatado na mesma saga | 0 |
+| DLQs | `os-saga-replies` 0, `execution-commands` 0, `billing-commands` 1 (a mensagem da F6) |
+| Caminho feliz | OS 12 `DELIVERED`, orçamento `APPROVED`, pagamento `CONFIRMED` no provedor com o id `187833409670`, sem injeção manual |
+| F6 | OS 13, orçamento `CANCELED`, pagamento `CONFIRMED` com o id `186775499739`, item `REPAIR_FAILED`, estoque de volta a 10 |
+
+O runbook foi exercitado nessa mensagem: [evidências do redrive](runbook-redrive-dlq.md#evidências).
+
 ## Invariantes que a matriz garante
 
 1. **Nenhum dinheiro retido sem serviço:** todo caminho que cancela uma OS com pagamento confirmado passa por
