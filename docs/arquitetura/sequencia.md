@@ -136,7 +136,8 @@ grava todos os comandos na mesma transação
 
 - **Entre filas não há ordem:** o Execution pode confirmar o `CancelDiagnosis` antes de o Billing começar o estorno.
 - **Dentro de uma fila a ordem de entrega vale**, porque o grupo FIFO é a própria OS. O consumidor lê em lotes e segue
-  depois de uma falha, então a falha de uma mensagem não segura as que vieram no mesmo lote. O relay envia por `occurred_at`, que tem
+  depois de uma falha, então a falha de uma mensagem não segura as que vieram no mesmo lote, um risco conhecido registrado no
+  [ADR-006](adr/ADR-006-mensageria.md). O relay envia por `occurred_at`, que tem
   resolução de 1 µs no Linux dos pods. Medido em 2026-11-03 com JDK 17: `Instant.now()` salta de 1 em 1 µs no Linux e
   a cada ~500 µs no Windows, onde dois comandos seguidos empatam. Por isso a ordem de emissão é provada no
   [`SagaOrchestratorTest`](../../src/test/java/br/com/fiap/postech/carworkshop/saga/usecase/interactor/SagaOrchestratorTest.java),

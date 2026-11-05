@@ -99,12 +99,16 @@ lê o que precisa, sem nenhum identificador fixo no código.
 ## Observabilidade
 
 Uma entidade de APM **por serviço**, com o agente embutido na imagem. Os logs saem em JSON com
-`correlationId` e `sagaId` como campos, o que permite seguir **a mesma ordem de serviço nos três serviços** com
+`correlationId` e `sagaId` como campos, e o objetivo é seguir **a mesma ordem de serviço nos três serviços** com
 uma consulta só. As métricas de negócio da fase anterior continuam, agora com a filial como dimensão.
 
 ## O que ainda não existe
 
-Este diagrama é o alvo da fase. No bloco do esqueleto andante existem, de ponta a ponta, apenas o caminho
-`StartDiagnosis` → `DiagnosisStarted`: a fila de comandos do Execution, a fila de respostas do OS e o outbox do
-OS. O banco do Billing, a tabela do Execution, a fila de comandos do Billing e a integração com o Mercado Pago
-entram nos blocos de domínio de cada serviço.
+Os componentes deste diagrama já rodaram juntos no EKS ([execuções de 2026-11-05](matriz-de-compensacao.md#execução-no-eks)).
+Falta a camada de observabilidade distribuída. Medido no New Relic naquela sessão:
+
+- O traço distribuído **não atravessa a mensageria**: 0 de 72 traços com mensagens e chamadas web passaram de um serviço.
+  Pelo HTTP ele já atravessa: o Execution chamando o catálogo do OS.
+- O **Billing não envia `correlationId` nem `sagaId`** ao New Relic, então a consulta por ordem de serviço só alcança o OS e
+  o Execution.
+- Os painéis e os alertas desta fase ainda não foram publicados, e não há métricas de saga, de pagamento nem de DLQ.
