@@ -15,8 +15,10 @@ as retentativas explicam.
 | `billing-commands-dlq.fifo` | `billing-commands.fifo` | Billing | 3 · 30 s |
 | `os-saga-replies-dlq.fifo` | `os-saga-replies.fifo` | OS (orquestrador) | 3 · 30 s |
 
-Enquanto uma mensagem é retentada, as de trás **no mesmo grupo FIFO** esperam: o grupo é a OS, então só aquela ordem de
-serviço fica parada. Ao cair na DLQ, a mensagem libera o grupo e as de trás andam.
+O grupo FIFO é a OS, então uma mensagem em retentativa só afeta aquela ordem de serviço. O bloqueio não é total: os
+consumidores leem lotes de até 10 mensagens e seguem depois de uma falha, então o que veio no mesmo lote é processado mesmo
+com a mensagem da frente falhando. Medido na F6: o `CancelBudget` concluiu enquanto o `RefundPayment` ainda estava na segunda
+das 3 tentativas. Fora do lote, as de trás esperam a da frente sair da fila.
 
 ## 1. Identificar
 
@@ -26,20 +28,34 @@ aws sqs get-queue-attributes --queue-url $dlq --attribute-names ApproximateNumbe
 aws sqs receive-message --queue-url $dlq --max-number-of-messages 1 --visibility-timeout 0 --attribute-names All --output json
 ```
 
-A visibilidade zero lê sem esconder a mensagem. Do corpo, anote:
+A visibilidade zero lê sem esconder a mensagem, mas cada leitura soma 1 ao `ApproximateReceiveCount`. Do corpo, anote:
 
 | Campo do envelope | Para quê |
 |---|---|
 | `type` | Qual comando ou resposta falhou |
 | `workOrderId` | Qual OS está parada |
-| `sagaId` e `correlationId` | Como achar o erro nos logs |
+| `sagaId` e `correlationId` | Como seguir a OS nos logs, até a falha |
 | `messageId` | A chave da inbox: é por ele que uma reentrega é reconhecida |
 
 Em seguida, procure o erro no serviço que consome a fila de origem:
 
 ```powershell
-kubectl -n billing logs deployment/billing-service --since=1h | Select-String "<correlationId>"
+kubectl -n billing logs -l app=billing-service --tail=-1 --since=1h --prefix | Select-String "Command failed"
 ```
+
+| Fila de origem | Namespace e rótulo | Texto da falha |
+|---|---|---|
+| `billing-commands.fifo` | `billing`, `app=billing-service` | `Command failed` |
+| `execution-commands.fifo` | `execution`, `app=execution-service` | `Command failed` |
+| `os-saga-replies.fifo` | `os`, `app=car-workshop-api` | `Saga reply failed` |
+
+Duas armadilhas medidas:
+
+- **Procure pelo rótulo, com `--tail=-1`.** Com duas réplicas, `deployment/billing-service` lê um pod só: deu 6 linhas da
+  OS, contra 8 pelo rótulo. Sem `--tail=-1`, o rótulo traz só as últimas 10 linhas de cada pod.
+- **A linha da falha não traz o `correlationId`.** O `mdc` dela vem vazio: o `catch` roda depois que o `try` com recurso
+  fechou o contexto de log. Por isso a busca é pelo texto da falha. A causa está em `exception.message`, que no estorno cita
+  o `paymentId` do envelope.
 
 ## 2. Classificar
 
@@ -47,7 +63,7 @@ kubectl -n billing logs deployment/billing-service --since=1h | Select-String "<
 |---|---|---|
 | Serviço fora do ar, 5xx do provedor, timeout, banco indisponível | **Transitória** | Corrija a causa e reenvie (passo 3) |
 | Credencial do laboratório expirada | **Transitória** | Renove a credencial e reenvie |
-| `401 Unauthorized use of live credentials` no estorno | **Permanente na sandbox** do Mercado Pago ([ADR-008](adr/ADR-008-pagamento-mercado-pago.md)) | Não adianta reenviar: registre o envelope. Fora da sandbox a mesma mensagem seria transitória |
+| `Mercado Pago answered HTTP 401 for /v1/payments/{id}/refunds` | **Permanente na sandbox** do Mercado Pago: a resposta dele é `Unauthorized use of live credentials` ([ADR-008](adr/ADR-008-pagamento-mercado-pago.md)) | Não adianta reenviar: registre o envelope. Fora da sandbox a mesma mensagem seria transitória |
 | `No saga for Work Order`, JSON inválido, campo obrigatório ausente | **Permanente** | Não reenvie: a mensagem nunca vai dar certo. Investigue quem a produziu |
 
 Na dúvida, trate como permanente. Reenviar uma mensagem que não tem como dar certo só gasta mais 3 tentativas e devolve o
@@ -64,7 +80,8 @@ aws sqs list-message-move-tasks --source-arn $dlqArn
 ```
 
 Sem `--destination-arn`, as mensagens voltam para a fila de origem. O movimento é assíncrono e só um pode estar ativo por
-fila. A permissão vem da credencial em uso: `sqs:StartMessageMoveTask`, `sqs:ListMessageMoveTasks`,
+fila. Logo depois do disparo, a tarefa pode aparecer `COMPLETED` com `ApproximateNumberOfMessagesMoved` em 0, e a leitura
+seguinte traz o número certo: confira pela profundidade das duas filas, não por esse contador. A permissão vem da credencial em uso: `sqs:StartMessageMoveTask`, `sqs:ListMessageMoveTasks`,
 `sqs:ReceiveMessage`, `sqs:DeleteMessage` e `sqs:GetQueueAttributes` na DLQ, e `sqs:SendMessage` na origem.
 
 **Por que reenviar é seguro:** a mensagem redirecionada ganha um novo `MessageId` do SQS e pode se intercalar com as
@@ -140,5 +157,21 @@ Mecanismo verificado em 2026-11-03: com `maxReceiveCount = 3`, a resposta que o 
 intacta para a DLQ no 4º recebimento, sem efeito na saga (F9), e a resposta repetida não tem efeito (F10), ambos em
 [`resiliencia.feature`](../../src/test/resources/features/saga/resiliencia.feature), contra filas FIFO em contêiner.
 
-O redrive pelo `start-message-move-task` na AWS real, sob as permissões do laboratório, será medido na primeira sessão
-com a mensagem da F6.
+Redrive medido em 2026-11-05 no SQS real, com as permissões do laboratório, na mensagem da F6 (OS 13, `RefundPayment`):
+
+| Medida | Resultado |
+|---|---|
+| Permissão | `start-message-move-task` e `list-message-move-tasks` aceitos pela credencial do laboratório |
+| Movimento | `COMPLETED`, 1 de 1 mensagem, em fila FIFO |
+| Tempo | Disparo e 1ª retentativa às 01:15:17, depois 01:15:47 e 01:16:17 (UTC); de volta à DLQ em cerca de 90 s |
+| `MessageId` do SQS | Mudou: `dd2f40f0-…` → `7f823f36-…` |
+| `messageId` do envelope | Igual: `c98dd409-e609-48bd-9456-5bd3015aa751` |
+| `MessageGroupId` | Igual: `13` |
+| `ApproximateReceiveCount` | Recomeçou: 5 antes (3 tentativas + 2 leituras), 4 depois (3 tentativas + 1 leitura) |
+| Efeito | 401 nas 3 tentativas; a saga seguiu em `COMPENSATING` com `REFUND_PAYMENT` pendente |
+
+Como a mensagem é permanente na sandbox, ela ficou na DLQ, com o envelope transcrito:
+
+```json
+{"messageId":"c98dd409-e609-48bd-9456-5bd3015aa751","type":"RefundPayment","version":1,"occurredAt":"2026-11-05T01:10:48.106809Z","sagaId":"42291c06-75b1-4c40-b388-7da7f60fafd9","workOrderId":13,"branchId":"SP-01","correlationId":"EVIDENCIA-B7-41946206096-49","causationId":"8db50474-e418-4ce4-8a65-b1fb90cd5c76","payload":{"paymentId":"186775499739","reason":"REPAIR_FAILED"}}
+```
