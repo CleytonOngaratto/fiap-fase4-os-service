@@ -28,6 +28,7 @@ Os documentos nascem junto com o código, um bloco por vez; os que ainda não ex
 | [adr/ADR-007-lambda-sem-banco-do-os.md](adr/ADR-007-lambda-sem-banco-do-os.md) | Por que a Lambda de autenticação consulta um endpoint interno do OS Service em vez de ler a tabela de clientes, e por que a allowlist do Gateway não basta sozinha |
 | [adr/ADR-006-mensageria.md](adr/ADR-006-mensageria.md) | Por que SNS FIFO publicando em SQS FIFO com outbox transacional, o que isso custa (bloqueio de cabeça de fila, idempotência obrigatória) e o que ficou como dívida registrada |
 | [adr/ADR-008-pagamento-mercado-pago.md](adr/ADR-008-pagamento-mercado-pago.md) | Por que **Checkout Pro** e não Checkout API nem Orders API; as quatro chamadas ao provedor; por que o status vem sempre do `GET /v1/payments/{id}`; a chave de idempotência do estorno; o cancelamento *best-effort* e as duas camadas do pagamento que chega depois do cancelamento |
+| [adr/ADR-010-rastreamento-distribuido.md](adr/ADR-010-rastreamento-distribuido.md) | Como o traço distribuído atravessa a mensageria: o contexto guardado no outbox na transação do passo, o relay só copiando, uma transação por mensagem consumida; por que desligar o módulo `ejb-4.0` do agente foi reprovado no spike |
 | [adr/ADR-009-tabela-unica-do-execution.md](adr/ADR-009-tabela-unica-do-execution.md) | Por que **uma tabela só** no DynamoDB do Execution, com estado, histórico, inbox e outbox na mesma partição da ordem de serviço; por que a outbox entra no `TransactWriteItems` em vez de publicar direto; os dois índices secundários; e o que fazer sem `SKIP LOCKED` |
 | [sequencia.md](sequencia.md) | Sequência da Saga: caminho feliz, compensação depois do pagamento e cancelamento pelo atendimento; e o que a "ordem" das compensações quer dizer de verdade |
 | [runbook-redrive-dlq.md](runbook-redrive-dlq.md) | O que fazer quando uma mensagem para numa DLQ: identificar, classificar, reenviar e verificar, e por que o reenvio é seguro |
@@ -48,7 +49,7 @@ Os documentos nascem junto com o código, um bloco por vez; os que ainda não ex
 | Saga com rollback e compensação em qualquer etapa | [matriz-de-compensacao.md](matriz-de-compensacao.md) · [maquina-de-estados.md §2](maquina-de-estados.md) |
 | Saga orquestrada ou coreografada, com a escolha justificada | [ADR-001](adr/ADR-001-saga-orquestrada.md) |
 | Diagrama geral e sequência da Saga | [componentes.md](componentes.md) · [sequencia.md](sequencia.md) |
-| Rastreamento dos fluxos distribuídos | [catalogo-de-mensagens.md §2](catalogo-de-mensagens.md) (`correlationId` e `sagaId` em toda mensagem) |
+| Rastreamento dos fluxos distribuídos | [ADR-010](adr/ADR-010-rastreamento-distribuido.md) (traço pela mensageria) · [catalogo-de-mensagens.md §2](catalogo-de-mensagens.md) (`correlationId` e `sagaId` em toda mensagem) · [componentes.md](componentes.md#observabilidade) (métricas, painel e alertas) |
 
 ## Ordem de leitura sugerida
 

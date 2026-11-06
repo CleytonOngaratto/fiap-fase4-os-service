@@ -15,6 +15,11 @@ final class E2eEnvironment {
         return value;
     }
 
+    static String orDefault(String name, String fallback) {
+        String value = System.getenv(name);
+        return value == null || value.isBlank() ? fallback : value;
+    }
+
     static Duration seconds(String name) {
         return Duration.ofSeconds(Long.parseLong(required(name)));
     }

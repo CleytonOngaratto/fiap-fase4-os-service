@@ -52,6 +52,14 @@ mudança de caminho. O `PaymentCanceled` é publicado para o orquestrador **mesm
 cancelamento**; só falha de transporte (5xx esgotado, timeout) vai para a DLQ. Sem essa regra a saga ficaria
 em `COMPENSATING` para sempre esperando uma confirmação que nunca viria.
 
+**Recusa antes do prazo não vira estorno (G55, 2026-11-05).** O pagamento guarda o id da última tentativa, que pode ser
+de uma tentativa `rejected`. Com credencial real, pela documentação do provedor, cancelar esse id responde 2018, e o 2018 levava ao estorno de algo que
+nunca foi pago: o estorno falharia e a mensagem iria para a DLQ, com a saga parada. Agora, diante do 2018, o Billing
+consulta o pagamento no provedor. `rejected` e `cancelled` cancelam localmente, sem estorno, com linha de log própria;
+qualquer outro status, inclusive `approved` e `refunded`, segue para o estorno com a mesma chave. **A sandbox não exercita
+esse ramo:** o `PUT` de cancelamento no pagamento recusado `185673513797` respondeu **401**, e qualquer recusa que não seja o
+2018 já cancela e publica `PaymentCanceled`. A prova do conserto é o teste puro do `PaymentInteractor` (billing #10).
+
 **Todo estorno usa a mesma chave de idempotência.** Ela nasce com o pagamento (`refund_idempotency_key`,
 UUID v4 persistido) e vai no header `X-Idempotency-Key` em toda tentativa — a do retry e a do estorno
 automático. É o que garante que retentar a compensação não estorne duas vezes.
@@ -209,4 +217,5 @@ continuaria o mesmo.
 | 2026-10-29 | Conserto **implantado e confirmado pelo provedor**: a mesma simulação que devolvia 500 passou a responder **200 - OK**, com a mensagem do painel *"Excelente! Enviamos uma notificação Webhook com sucesso"* e o log do pod registrando `refers to a payment the provider does not know: acknowledged`. A simulação do modo de **teste** segue devolvendo 401, corretamente: ela assina com o segredo de teste, e o implantado é o de produção |
 | 2026-10-29 | Estorno **recusado pela sandbox** com 401 `Unauthorized use of live credentials` (pagamento em `live_mode: true`, token de conta `test_user`); `GET` de estornos responde 200 com o mesmo token. A recusa provou a compensação: retentativa → DLQ → saga em `COMPENSATING` com o passo de estorno pendente |
 | 2026-10-29 | **Dois** pagamentos reais confirmados (R$ 257,70 cada), com os ids do provedor gravados em `payments.mp_payment_id`. `payment_attempts` com **1** linha (`cc_rejected_insufficient_amount`), e o outbox dos dois serviços **drenado** (`sent_at is null` = 0) — nenhum evento preso |
+| 2026-11-05 | **Cancelamento depois de recusa (G55):** o `PUT` de cancelamento no pagamento recusado `185673513797`, rodado uma vez pelo dono, respondeu **401** na sandbox, e o `GET` seguiu `rejected`. Billing #10: 6 testes puros dos ramos (`rejected`, `cancelled` e 404 sem estorno; `approved` e `refunded` com estorno na mesma chave; falha de leitura retentada), e os 4 sem estorno falharam antes do conserto |
 | 2026-10-29 | **Prazo de pagamento vencido compensou sozinho:** cobrança não paga → *scheduler* do orquestrador estourou o prazo → orçamento e pagamento `CANCELED` com motivo `PAYMENT_EXPIRED`. É o cancelamento *best-effort* desta ADR exercitado no ramo em que o cliente **nunca abriu o link** — o caso comum, e o que não tem API de cancelamento no provedor |

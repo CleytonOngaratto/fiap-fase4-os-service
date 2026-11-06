@@ -121,7 +121,7 @@ class EksSagaDriver implements SagaDriver {
 
     @Override
     public void openWorkOrder(String branch) {
-        branchId = branch;
+        branchId = E2eEnvironment.orDefault("E2E_BRANCH", branch);
         String cpf = randomCpf();
         long customerId = gateway.bearing(adminToken)
                 .body(Map.of("name", "Cliente e2e", "document", cpf, "rg", "123456789",
@@ -287,6 +287,9 @@ class EksSagaDriver implements SagaDriver {
 
     @Override
     public void expirePaymentDeadline() {
+        JsonPath charge = chargeWithItsLink();
+        gateway.notice("Para recusar antes do prazo, pague com FUND ate " + charge.getString("paymentDeadline")
+                + ": " + charge.getString("paymentLink"));
         waitForTheDeadline("E2E_PAYMENT_WAIT_SECONDS");
     }
 

@@ -95,10 +95,14 @@ $existing = @{}
 $res = Invoke-NerdGraph "{ actor { account(id: $AccountId) { alerts { nrqlConditionsSearch(searchCriteria: {policyId: `"$($policy.id)`"}) { nrqlConditions { id name } } } } } }"
 foreach ($c in $res.data.actor.account.alerts.nrqlConditionsSearch.nrqlConditions) { $existing[$c.name] = $c.id }
 
+$refused = 0
+
 Write-Head "Condicoes"
 foreach ($c in $spec.conditions) {
     $nrql = ($c.nrql -replace '\\', '\\' -replace '"', '\"')
     $desc = ($c.description -replace '\\', '\\' -replace '"', '\"')
+    $timing = if ($c.aggregationMethod -eq "EVENT_TIMER") { "aggregationTimer: $($c.aggregationTimerSeconds)" }
+    else { "aggregationDelay: $($c.aggregationDelaySeconds)" }
     $condition = @"
 {
   name: "$($c.name)"
@@ -107,12 +111,12 @@ foreach ($c in $spec.conditions) {
   nrql: { query: "$nrql" }
   signal: {
     aggregationWindow: $($c.signalAggregationWindowSeconds)
-    aggregationMethod: EVENT_FLOW
-    aggregationDelay: 120
+    aggregationMethod: $($c.aggregationMethod)
+    $timing
   }
   terms: [{
     threshold: $($c.thresholdCritical)
-    thresholdOccurrences: ALL
+    thresholdOccurrences: $($c.thresholdOccurrences)
     thresholdDuration: $($c.thresholdDurationSeconds)
     operator: $($c.operator)
     priority: CRITICAL
@@ -136,8 +140,8 @@ foreach ($c in $spec.conditions) {
         $verb = "criada"
     }
 
-    if ($res.transportError) { Write-Bad "$($c.name) — transporte: $($res.transportError)"; continue }
-    if ($res.errors) { Write-Bad "$($c.name) — $($res.errors[0].message)"; continue }
+    if ($res.transportError) { Write-Bad "$($c.name) — transporte: $($res.transportError)"; $refused++; continue }
+    if ($res.errors) { Write-Bad "$($c.name) — $($res.errors[0].message)"; $refused++; continue }
     Write-Ok "$($c.name) $verb (id $($payload.id))"
 }
 
@@ -150,8 +154,9 @@ if (-not $NotificationEmail) {
 }
 
 if (-not $NotificationEmail) {
-    Write-Empty "sem e-mail: as condicoes abrem incidente na UI e nao avisam ninguem"
+    Write-Bad "sem e-mail: as condicoes abrem incidente na UI e nao avisam ninguem"
     Write-Host "         Use -NotificationEmail ou publique em /fase4/newrelic/alert-email." -ForegroundColor DarkGray
+    $refused++
 }
 else {
     $name = $spec.policyName
@@ -165,7 +170,7 @@ else {
         $destination = $r.data.aiNotificationsCreateDestination.destination
     }
 
-    if (-not $destination) { Write-Bad "nao consegui criar a destination de e-mail" }
+    if (-not $destination) { Write-Bad "nao consegui criar a destination de e-mail"; $refused++ }
     else {
         Write-Ok "destination de e-mail (id $($destination.id))"
 
@@ -178,7 +183,7 @@ else {
             $channel = $r.data.aiNotificationsCreateChannel.channel
         }
 
-        if (-not $channel) { Write-Bad "nao consegui criar o channel" }
+        if (-not $channel) { Write-Bad "nao consegui criar o channel"; $refused++ }
         else {
             Write-Ok "channel de e-mail (id $($channel.id))"
 
@@ -188,8 +193,11 @@ else {
             else {
                 $m = "mutation { aiWorkflowsCreateWorkflow(accountId: $AccountId, createWorkflowData: {mutingRulesHandling: NOTIFY_ALL_ISSUES, name: `"$name`", workflowEnabled: true, destinationsEnabled: true, issuesFilter: {name: `"policy`", type: FILTER, predicates: [{attribute: `"labels.policyIds`", operator: EXACTLY_MATCHES, values: [`"$($policy.id)`"]}]}, destinationConfigurations: [{channelId: `"$($channel.id)`", notificationTriggers: [ACTIVATED, CLOSED]}]}) { workflow { id } errors { description } } }"
                 $r = Invoke-NerdGraph $m
-                if ($r.errors) { Write-Bad $r.errors[0].message }
-                elseif ($r.data.aiWorkflowsCreateWorkflow.errors) { $r.data.aiWorkflowsCreateWorkflow.errors | ForEach-Object { Write-Bad $_.description } }
+                if ($r.errors) { Write-Bad $r.errors[0].message; $refused++ }
+                elseif ($r.data.aiWorkflowsCreateWorkflow.errors) {
+                    $r.data.aiWorkflowsCreateWorkflow.errors | ForEach-Object { Write-Bad $_.description }
+                    $refused++
+                }
                 else { Write-Ok "workflow criado (id $($r.data.aiWorkflowsCreateWorkflow.workflow.id)) — notifica em ACTIVATED e CLOSED" }
             }
         }
@@ -198,3 +206,7 @@ else {
 
 Write-Host ""
 Write-Host "  Politica: $($spec.policyName) (id $($policy.id)) — abra em Alerts -> Alert Policies" -ForegroundColor Cyan
+if ($refused -gt 0) {
+    Write-Bad "$refused parte(s) recusada(s) pelo New Relic: a politica nao esta completa. Confira as mensagens acima."
+    exit 1
+}

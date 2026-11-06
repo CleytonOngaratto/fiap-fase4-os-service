@@ -84,7 +84,9 @@ flowchart LR
 **Message attributes** (limite de **10** por mensagem no SNS/SQS): `type`, `version`, `sagaId`,
 `correlationId`, mais os headers de trace distribuído (`traceparent`, `tracestate`, `newrelic`). São **7**,
 dentro do limite. *Message attributes* publicados no SNS chegam intactos ao SQS com *raw delivery* — provado no
-spike de 2026-09-29.
+spike de 2026-09-29. Os 3 de traço vêm do contexto que o outbox gravou na transação do passo, e o relay só os copia
+([ADR-010](adr/ADR-010-rastreamento-distribuido.md)). Medido no fio em 2026-11-05: 7 atributos, com o `traceparent`
+guardado, porque o agente não sobrescreve atributo que já existe.
 
 **Evolução de contrato:** mudança **aditiva** (campo novo opcional) mantém a `version`, e o consumidor é
 *tolerant reader*. Mudança **quebrando** contrato cria `version: 2`, e as duas versões convivem até todos os
@@ -98,12 +100,16 @@ consumidor já sabe tratar, porque é *tolerant reader* por contrato.
 |---|---|---|
 | ~~`branchId`~~ | ✅ **entra desde o bloco do domínio do OS**: a abertura recebe a filial, e todo comando do orquestrador a carrega no envelope | — |
 | ~~`complaint`~~ | ✅ **entra desde o bloco do domínio do OS**, no `payload` do `StartDiagnosis` | — |
-| `branchId` **na resposta** | o Execution e o Billing passarem a devolvê-lo nos eventos deles | ausente do envelope **no sentido participante → orquestrador**; o orquestrador não depende dele, porque já conhece a filial da saga |
+| ~~`branchId` **na resposta**~~ | ✅ **já vai nos eventos do Execution e do Billing**: o codec de cada um copia a filial do comando para a resposta (conferido em 2026-11-05) | — |
 | ~~`mechanic`~~ (no `DiagnosisStarted`) | ✅ **entra desde o bloco do Execution**: o diagnóstico passou a ser iniciado por uma pessoa, e o nome sai do **próprio token** dela (`JsonWebToken.getName()`), nunca de campo da requisição | — |
 
 **`sagaId`.** Gerado quando a saga nasce, junto com a abertura da OS, e devolvido pelos participantes em cada
 resposta. Desde o bloco do orquestrador ele é a chave de `saga_instance`: além de correlacionar os logs, é por
 ele que se recupera em que passo o processo está e o que falta compensar.
+
+**O `correlationId` não é contínuo.** Depois do webhook do Mercado Pago e nos passos disparados pelo prazo ou pelo
+cancelamento, o comando sai sem ele, porque não há requisição de origem. Para seguir uma OS inteira, use o `sagaId`:
+`FROM Log WHERE context.sagaId = '<sagaId>'` alcança os 3 serviços.
 
 ---
 

@@ -8,6 +8,11 @@ on:
         required: false
         default: '@e2e'
         type: string
+      branch:
+        description: 'Filial das OS abertas pelos cenarios. Ex.: SP-01, RJ-01'
+        required: false
+        default: 'SP-01'
+        type: string
 
 permissions:
   contents: read
@@ -196,6 +201,7 @@ jobs:
       - name: Run the saga scenarios
         env:
           E2E_TAGS: ${{ inputs.tags }}
+          E2E_BRANCH: ${{ inputs.branch }}
           E2E_ADMIN_USERNAME: ${{ secrets.E2E_ADMIN_USERNAME }}
           E2E_ADMIN_PASSWORD: ${{ secrets.E2E_ADMIN_PASSWORD }}
         run: mvn -B clean test -Pe2e -Djacoco.skip=true
