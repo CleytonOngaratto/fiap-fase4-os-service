@@ -2,7 +2,9 @@ package br.com.fiap.postech.carworkshop.saga.infrastructure.messaging;
 
 import br.com.fiap.postech.carworkshop.workorder.domain.entity.StatusWO;
 import br.com.fiap.postech.carworkshop.saga.infrastructure.persistence.SagaOutboxJpaEntity;
+import br.com.fiap.postech.carworkshop.saga.infrastructure.metrics.SagaMetricsCollector;
 import br.com.fiap.postech.carworkshop.saga.infrastructure.persistence.SagaOutboxPanacheRepository;
+import io.micrometer.core.instrument.MeterRegistry;
 import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.TestProfile;
@@ -14,6 +16,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sqs.model.GetQueueAttributesRequest;
+import software.amazon.awssdk.services.sqs.model.GetQueueUrlRequest;
 import software.amazon.awssdk.services.sqs.model.Message;
 import software.amazon.awssdk.services.sqs.model.MessageAttributeValue;
 import software.amazon.awssdk.services.sqs.model.PurgeQueueRequest;
@@ -28,6 +31,7 @@ import java.util.UUID;
 
 import static io.restassured.RestAssured.given;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -54,6 +58,15 @@ class SagaMessagingIntegrationTest {
 
     @Inject
     SagaRepliesConsumer consumer;
+
+    @Inject
+    SagaMetricsCollector sagaMetrics;
+
+    @Inject
+    DeadLetterQueueGauge deadLetters;
+
+    @Inject
+    MeterRegistry registry;
 
     @ConfigProperty(name = "saga.commands.execution.queue-url")
     String commandsQueueUrl;
@@ -216,5 +229,38 @@ class SagaMessagingIntegrationTest {
         consumer.poll();
 
         assertEquals(1, messagesLeftOn(repliesQueueUrl));
+    }
+
+    @Test
+    @TestSecurity(user = "admin", roles = "ADMIN")
+    void sagaMetrics_countTheSagaOfANewWorkOrderOnItsBranch() {
+        openWorkOrder(TRACE_ID);
+
+        sagaMetrics.collect();
+
+        assertTrue(registry.get("saga.instances").tag("state", "AWAITING_DIAGNOSIS").tag("branch", "SP-01")
+                .gauge().value() >= 1.0);
+        assertFalse(Double.isNaN(registry.get("saga.overdue").tag("branch", "SP-01").gauge().value()));
+        assertFalse(Double.isNaN(registry.get("saga.compensations").tag("reason", "PAYMENT_EXPIRED")
+                .tag("branch", "SP-01").gauge().value()));
+    }
+
+    @Test
+    void deadLetterGauge_readsTheRepliesDeadLetterQueueNamedByTheRedrivePolicy() {
+        String deadLetterUrl = sqs.getQueueUrl(GetQueueUrlRequest.builder()
+                .queueName("os-saga-replies-dlq.fifo").build()).queueUrl();
+        sqs.purgeQueue(PurgeQueueRequest.builder().queueUrl(deadLetterUrl).build());
+        sqs.sendMessage(SendMessageRequest.builder()
+                .queueUrl(deadLetterUrl)
+                .messageBody("{}")
+                .messageGroupId("1")
+                .messageDeduplicationId(UUID.randomUUID().toString())
+                .build());
+
+        deadLetters.measure();
+
+        assertEquals(1.0, registry.get("saga.dlq.messages").tag("queue", "os-saga-replies-dlq.fifo")
+                .gauge().value());
+        sqs.purgeQueue(PurgeQueueRequest.builder().queueUrl(deadLetterUrl).build());
     }
 }
