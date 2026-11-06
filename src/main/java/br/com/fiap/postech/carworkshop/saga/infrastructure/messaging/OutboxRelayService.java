@@ -4,6 +4,8 @@ import br.com.fiap.postech.carworkshop.saga.domain.message.SagaDestination;
 import br.com.fiap.postech.carworkshop.saga.infrastructure.persistence.SagaOutboxJpaEntity;
 import br.com.fiap.postech.carworkshop.saga.infrastructure.persistence.SagaOutboxPanacheRepository;
 import br.com.fiap.postech.carworkshop.shared.infrastructure.observability.LogContext;
+import br.com.fiap.postech.carworkshop.shared.infrastructure.observability.TraceContext;
+import br.com.fiap.postech.carworkshop.shared.infrastructure.observability.TraceHeaders;
 import io.quarkus.runtime.StartupEvent;
 import io.quarkus.scheduler.Scheduled;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -29,6 +31,9 @@ import java.util.stream.Collectors;
 @ApplicationScoped
 public class OutboxRelayService {
 
+    private static final String IDENTITY = "saga-outbox-relay";
+    private static final String TRANSACTION_CATEGORY = "Scheduled";
+
     @Inject
     SqsClient sqs;
 
@@ -37,6 +42,9 @@ public class OutboxRelayService {
 
     @Inject
     SagaEnvelopeCodec codec;
+
+    @Inject
+    TraceContext trace;
 
     @ConfigProperty(name = "saga.commands.execution.queue-url")
     Optional<String> executionQueueUrl;
@@ -61,12 +69,18 @@ public class OutboxRelayService {
         }
     }
 
-    @Scheduled(every = "2s", identity = "saga-outbox-relay",
+    @Scheduled(every = "2s", identity = IDENTITY,
             concurrentExecution = Scheduled.ConcurrentExecution.SKIP)
     @Transactional
     public void drain() {
         Set<String> configured = queues.keySet().stream().map(Enum::name).collect(Collectors.toSet());
         List<SagaOutboxJpaEntity> pending = repository.claimPending(configured, batchSize);
+        // O agente (modulo ejb-4.0) abre uma transacao no @Transactional a cada ciclo, com o nome .../proceed.
+        if (pending.isEmpty()) {
+            trace.ignoreTransaction();
+            return;
+        }
+        trace.nameTransaction(TRANSACTION_CATEGORY, IDENTITY);
         for (SagaOutboxJpaEntity row : pending) {
             try (LogContext ignored = LogContext.of(row.getCorrelationId(), row.getSagaId(), row.getBranchId())) {
                 sqs.sendMessage(requestFor(row));
@@ -98,6 +112,7 @@ public class OutboxRelayService {
         if (row.getCorrelationId() != null && !row.getCorrelationId().isBlank()) {
             attributes.put(SagaEnvelopeCodec.FIELD_CORRELATION_ID, text(row.getCorrelationId()));
         }
+        TraceHeaders.fromJson(row.getTraceContext()).forEach((name, value) -> attributes.put(name, text(value)));
         return attributes;
     }
 

@@ -3,6 +3,8 @@ package br.com.fiap.postech.carworkshop.saga.infrastructure.messaging;
 import br.com.fiap.postech.carworkshop.saga.domain.message.SagaDestination;
 import br.com.fiap.postech.carworkshop.saga.infrastructure.persistence.SagaOutboxJpaEntity;
 import br.com.fiap.postech.carworkshop.saga.infrastructure.persistence.SagaOutboxPanacheRepository;
+import br.com.fiap.postech.carworkshop.shared.infrastructure.observability.TraceContext;
+import br.com.fiap.postech.carworkshop.shared.infrastructure.observability.TraceHeaders;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -40,6 +42,7 @@ class OutboxRelayServiceTest {
 
     private final SqsClient sqs = mock(SqsClient.class);
     private final SagaOutboxPanacheRepository repository = mock(SagaOutboxPanacheRepository.class);
+    private final TraceContext trace = mock(TraceContext.class);
     private OutboxRelayService relay;
 
     @BeforeEach
@@ -50,6 +53,7 @@ class OutboxRelayServiceTest {
         relay.sqs = sqs;
         relay.repository = repository;
         relay.codec = codec;
+        relay.trace = trace;
         relay.executionQueueUrl = Optional.of(EXECUTION_QUEUE);
         relay.billingQueueUrl = Optional.of(BILLING_QUEUE);
         relay.batchSize = 10;
@@ -147,6 +151,35 @@ class OutboxRelayServiceTest {
     }
 
     @Test
+    void drain_sendsTheStoredTraceContextAsTheThreeTraceAttributes() {
+        SagaOutboxJpaEntity row = pendingRow("EVIDENCIA-B8-001");
+        row.setTraceContext(TraceHeaders.toJson(Map.of("traceparent", "00-trace-span-01", "tracestate", "nr=state",
+                "newrelic", "payload")));
+        when(repository.claimPending(any(), eq(10))).thenReturn(List.of(row));
+
+        relay.drain();
+
+        Map<String, MessageAttributeValue> attributes = captureRequest().messageAttributes();
+        assertEquals(7, attributes.size());
+        assertEquals("00-trace-span-01", attributes.get("traceparent").stringValue());
+        assertEquals("nr=state", attributes.get("tracestate").stringValue());
+        assertEquals("payload", attributes.get("newrelic").stringValue());
+        assertEquals("String", attributes.get("traceparent").dataType());
+    }
+
+    @Test
+    void drain_sendsTheMessageWithoutTraceAttributesWhenTheStoredContextIsCorrupt() {
+        SagaOutboxJpaEntity row = pendingRow("EVIDENCIA-B8-001");
+        row.setTraceContext("{\"traceparent\":");
+        when(repository.claimPending(any(), eq(10))).thenReturn(List.of(row));
+
+        relay.drain();
+
+        assertEquals(4, captureRequest().messageAttributes().size());
+        assertNotNull(row.getSentAt());
+    }
+
+    @Test
     void drain_omitsTheCorrelationAttributeWhenTheRowHasNone() {
         when(repository.claimPending(any(), eq(10))).thenReturn(List.of(pendingRow(null)));
 
@@ -162,6 +195,26 @@ class OutboxRelayServiceTest {
         relay.drain();
 
         verify(sqs, never()).sendMessage(any(SendMessageRequest.class));
+    }
+
+    @Test
+    void drain_dropsTheTransactionOfAnEmptyCycle() {
+        when(repository.claimPending(any(), eq(10))).thenReturn(List.of());
+
+        relay.drain();
+
+        verify(trace).ignoreTransaction();
+        verify(trace, never()).nameTransaction(any(), any());
+    }
+
+    @Test
+    void drain_namesTheTransactionOfACycleThatSends() {
+        when(repository.claimPending(any(), eq(10))).thenReturn(List.of(pendingRow("EVIDENCIA-B4-001")));
+
+        relay.drain();
+
+        verify(trace).nameTransaction("Scheduled", "saga-outbox-relay");
+        verify(trace, never()).ignoreTransaction();
     }
 
     @Test
