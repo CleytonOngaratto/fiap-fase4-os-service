@@ -55,4 +55,7 @@ public class SagaOutboxJpaEntity extends PanacheEntityBase {
 
     @Column(name = "sent_at")
     private Instant sentAt;
+
+    @Column(name = "trace_context")
+    private String traceContext;
 }

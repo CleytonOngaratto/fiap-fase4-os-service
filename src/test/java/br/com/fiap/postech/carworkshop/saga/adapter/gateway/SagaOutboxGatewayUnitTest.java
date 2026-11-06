@@ -5,12 +5,15 @@ import br.com.fiap.postech.carworkshop.saga.domain.message.SagaEnvelope;
 import br.com.fiap.postech.carworkshop.saga.domain.message.StartDiagnosisPayload;
 import br.com.fiap.postech.carworkshop.saga.infrastructure.persistence.SagaOutboxJpaEntity;
 import br.com.fiap.postech.carworkshop.saga.infrastructure.persistence.SagaOutboxPanacheRepository;
+import br.com.fiap.postech.carworkshop.shared.infrastructure.observability.TraceContext;
+import br.com.fiap.postech.carworkshop.shared.infrastructure.observability.TraceHeaders;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -25,6 +28,7 @@ import static org.mockito.Mockito.when;
 class SagaOutboxGatewayUnitTest {
 
     private final SagaOutboxPanacheRepository repository = mock(SagaOutboxPanacheRepository.class);
+    private final TraceContext trace = mock(TraceContext.class);
     private SagaOutboxGateway gateway;
 
     @BeforeEach
@@ -32,6 +36,32 @@ class SagaOutboxGatewayUnitTest {
         gateway = new SagaOutboxGateway();
         gateway.repository = repository;
         gateway.objectMapper = new ObjectMapper();
+        gateway.trace = trace;
+    }
+
+    @Test
+    void append_keepsTheTraceContextOfTheCurrentTransaction() {
+        when(trace.capture()).thenReturn(Map.of("traceparent", "00-trace-span-01", "newrelic", "payload"));
+
+        gateway.append(SagaEnvelope.startDiagnosis(42L, UUID.randomUUID(), "SP-01", "EVIDENCIA-B8-001",
+                new StartDiagnosisPayload("ABC1D23", "Barulho no motor")));
+
+        ArgumentCaptor<SagaOutboxJpaEntity> captor = ArgumentCaptor.forClass(SagaOutboxJpaEntity.class);
+        verify(repository).persist(captor.capture());
+        assertEquals(Map.of("traceparent", "00-trace-span-01", "newrelic", "payload"),
+                TraceHeaders.fromJson(captor.getValue().getTraceContext()));
+    }
+
+    @Test
+    void append_keepsNoTraceContextWhenThereIsNone() {
+        when(trace.capture()).thenReturn(Map.of());
+
+        gateway.append(SagaEnvelope.startDiagnosis(42L, UUID.randomUUID(), "SP-01", "EVIDENCIA-B8-001",
+                new StartDiagnosisPayload("ABC1D23", "Barulho no motor")));
+
+        ArgumentCaptor<SagaOutboxJpaEntity> captor = ArgumentCaptor.forClass(SagaOutboxJpaEntity.class);
+        verify(repository).persist(captor.capture());
+        assertNull(captor.getValue().getTraceContext());
     }
 
     @Test

@@ -6,6 +6,8 @@ import br.com.fiap.postech.carworkshop.saga.domain.message.SagaMessageType;
 import br.com.fiap.postech.carworkshop.saga.infrastructure.persistence.SagaOutboxJpaEntity;
 import br.com.fiap.postech.carworkshop.saga.infrastructure.persistence.SagaOutboxPanacheRepository;
 import br.com.fiap.postech.carworkshop.saga.usecase.port.out.SagaOutboxPort;
+import br.com.fiap.postech.carworkshop.shared.infrastructure.observability.TraceContext;
+import br.com.fiap.postech.carworkshop.shared.infrastructure.observability.TraceHeaders;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -20,6 +22,9 @@ public class SagaOutboxGateway implements SagaOutboxPort {
 
     @Inject
     ObjectMapper objectMapper;
+
+    @Inject
+    TraceContext trace;
 
     @Override
     // MANDATORY, nao REQUIRED: a linha do outbox so vale se for gravada na mesma transacao do estado. Sem
@@ -38,6 +43,7 @@ public class SagaOutboxGateway implements SagaOutboxPort {
                 .correlationId(envelope.correlationId())
                 .causationId(envelope.causationId())
                 .payload(serialize(envelope))
+                .traceContext(TraceHeaders.toJson(trace.capture()))
                 .build();
         repository.persist(entity);
     }

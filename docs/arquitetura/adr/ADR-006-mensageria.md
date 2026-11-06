@@ -84,7 +84,8 @@ Dois detalhes que o desenho exige e que não são opcionais:
   (`batch-size=1`), ao custo de vazão.
 - **Idempotência é obrigação do consumidor**, não um presente da fila.
 - **Limite de dez atributos por mensagem.** O envelope usa quatro; os de rastreamento distribuído somam mais
-  três. Fica pouca folga, e isso é registrado para quando a observabilidade distribuída crescer.
+  três, guardados no outbox desde o B8 ([ADR-010](ADR-010-rastreamento-distribuido.md)) e medidos no fio: 7. Fica
+  pouca folga, e isso é registrado para quando a observabilidade distribuída crescer.
 - **O relay é mais uma peça para operar:** se ele parar, nada é publicado, embora nada se perca. A fila de
   pendentes do outbox é um sinal direto disso.
 - **Simplificação do esqueleto, já resolvida:** o Execution publicou direto no tópico até ter banco. Hoje ele usa

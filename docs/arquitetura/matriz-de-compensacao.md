@@ -76,6 +76,14 @@ calar nesse caso deixaria a saga em `COMPENSATING` para sempre.
 > [ADR-008](adr/ADR-008-pagamento-mercado-pago.md). Esta prova não estava no plano do bloco: apareceu
 > porque a sessão rodou tempo real com prazos reais.
 
+> **F4 com recusa antes do prazo (G55, 2026-11-05).** "Recusas no meio só ficam registradas" nunca tinha rodado:
+> 0 linhas de `no longer cancelable` e de `refused to cancel` em 30 dias. Com credencial real, cancelar o id da tentativa
+> recusada responderia 2018, e o 2018 viraria estorno de algo nunca pago. O conserto (billing #10) cancela sem estorno
+> quando o provedor diz `rejected` ou `cancelled` ([ADR-008](adr/ADR-008-pagamento-mercado-pago.md)). Na sandbox, o mesmo
+> cancelamento responde 401 e cai na recusa comum, que já cancela: o `@F4` com o cartão `FUND` passa com ou sem o conserto,
+> e a prova do conserto é o teste puro. A prova do cenário é a linha `PaymentAttemptRejected` antes do prazo, seguida da do
+> ramo que rodou.
+
 > **F8 provado em ambiente real, sem simulação (2026-10-29).** A sandbox de contas de teste do Mercado
 > Pago recusa o estorno com `401 Unauthorized use of live credentials`, e a recusa exercitou a linha
 > inteira: retentativa com a mesma chave de idempotência, retentativa esgotada, mensagem na DLQ e a saga

@@ -2,11 +2,13 @@ package br.com.fiap.postech.carworkshop.workorder.infrastructure.metrics;
 
 import br.com.fiap.postech.carworkshop.workorder.domain.entity.StatusWO;
 import br.com.fiap.postech.carworkshop.workorder.usecase.port.out.WorkOrderMetricsPort;
+import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import jakarta.enterprise.context.ApplicationScoped;
 
 import java.time.Duration;
+import java.util.Collection;
 
 @ApplicationScoped
 public class WorkOrderMetricsAdapter implements WorkOrderMetricsPort {
@@ -27,7 +29,7 @@ public class WorkOrderMetricsAdapter implements WorkOrderMetricsPort {
         if (status == null) {
             return;
         }
-        registry.counter(STATUS_CHANGES, "status", status.name(), "branch", branch(branchId)).increment();
+        statusChanges(status, branch(branchId)).increment();
     }
 
     @Override
@@ -35,11 +37,7 @@ public class WorkOrderMetricsAdapter implements WorkOrderMetricsPort {
         if (serviceDuration == null || serviceDuration.isNegative()) {
             return;
         }
-        Timer.builder(COMPLETION_TIME)
-                .description("Elapsed time from work order creation to service completion")
-                .tag("branch", branch(branchId))
-                .register(registry)
-                .record(serviceDuration);
+        completionTime(branch(branchId)).record(serviceDuration);
     }
 
     @Override
@@ -47,12 +45,39 @@ public class WorkOrderMetricsAdapter implements WorkOrderMetricsPort {
         if (status == null || sinceCreation == null || sinceCreation.isNegative()) {
             return;
         }
-        Timer.builder(TIME_TO_STATUS)
+        timeToStatus(status, branch(branchId)).record(sinceCreation);
+    }
+
+    // O New Relic so conta uma serie a partir da segunda leitura: registrar com zero antes do primeiro uso e o
+    // que faz o primeiro incremento de cada status e filial aparecer.
+    public void registerSeries(Collection<String> branchIds) {
+        for (String branchId : branchIds) {
+            String branch = branch(branchId);
+            completionTime(branch);
+            for (StatusWO status : StatusWO.values()) {
+                statusChanges(status, branch);
+                timeToStatus(status, branch);
+            }
+        }
+    }
+
+    private Counter statusChanges(StatusWO status, String branch) {
+        return registry.counter(STATUS_CHANGES, "status", status.name(), "branch", branch);
+    }
+
+    private Timer completionTime(String branch) {
+        return Timer.builder(COMPLETION_TIME)
+                .description("Elapsed time from work order creation to service completion")
+                .tag("branch", branch)
+                .register(registry);
+    }
+
+    private Timer timeToStatus(StatusWO status, String branch) {
+        return Timer.builder(TIME_TO_STATUS)
                 .description("Elapsed time from work order creation until it reached a given status")
                 .tag("status", status.name())
-                .tag("branch", branch(branchId))
-                .register(registry)
-                .record(sinceCreation);
+                .tag("branch", branch)
+                .register(registry);
     }
 
     // Tag ausente faz o Micrometer recusar a serie inteira quando a mesma metrica ja foi registrada com a tag.

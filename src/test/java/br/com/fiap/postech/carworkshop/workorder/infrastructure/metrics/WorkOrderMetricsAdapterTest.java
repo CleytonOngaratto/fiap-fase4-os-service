@@ -8,6 +8,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -105,6 +106,28 @@ class WorkOrderMetricsAdapterTest {
         adapter.recordTimeToStatus(StatusWO.IN_PROGRESS, BRANCH, Duration.ofMinutes(-5));
 
         assertNull(registry.find(WorkOrderMetricsAdapter.TIME_TO_STATUS).timer());
+    }
+
+    @Test
+    void registerSeries_startsEveryStatusOfEveryBranchAtZero() {
+        adapter.registerSeries(List.of(BRANCH, "RJ-01"));
+
+        for (StatusWO status : StatusWO.values()) {
+            assertEquals(0.0, counterFor(status, "RJ-01"));
+            assertEquals(0L, timerFor(status).count());
+        }
+        assertEquals(0L, registry.get(WorkOrderMetricsAdapter.COMPLETION_TIME).tag("branch", "RJ-01").timer().count());
+    }
+
+    @Test
+    void registerSeries_keepsCountingOnTheRegisteredSeries() {
+        adapter.registerSeries(List.of(BRANCH));
+
+        adapter.recordStatusChange(StatusWO.RECEIVED, BRANCH);
+
+        assertEquals(1.0, counterFor(StatusWO.RECEIVED, BRANCH));
+        assertEquals(1, registry.find(WorkOrderMetricsAdapter.STATUS_CHANGES)
+                .tag("status", StatusWO.RECEIVED.name()).counters().size());
     }
 
     private Timer timerFor(StatusWO status) {

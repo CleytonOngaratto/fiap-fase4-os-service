@@ -2,6 +2,7 @@
 param(
     [string]$Region = "us-east-1",
     [int]$AccountId = 8439524,
+    [string[]]$Branch = @("SP-01"),
     [switch]$ValidateOnly
 )
 
@@ -63,6 +64,9 @@ function Invoke-NerdGraph {
 $dashboard = [System.IO.File]::ReadAllText($dashboardPath, [System.Text.UTF8Encoding]::new($false)) | ConvertFrom-Json
 
 $queries = @()
+foreach ($v in @($dashboard.variables)) {
+    if ($v.nrqlQuery) { $queries += [pscustomobject]@{ Page = "variaveis"; Widget = "variavel $($v.name)"; Nrql = $v.nrqlQuery.query } }
+}
 foreach ($page in $dashboard.pages) {
     foreach ($w in $page.widgets) {
         foreach ($q in $w.rawConfiguration.nrqlQueries) {
@@ -71,11 +75,13 @@ foreach ($page in $dashboard.pages) {
     }
 }
 
-Write-Head "Validando $($queries.Count) NRQL contra a conta $AccountId"
+$branchList = ($Branch | ForEach-Object { "'$_'" }) -join ", "
+Write-Head "Validando $($queries.Count) NRQL contra a conta $AccountId, filial $branchList"
 $invalid = 0
 $empty = 0
 foreach ($q in $queries) {
-    $escaped = ($q.Nrql -replace '\\', '\\' -replace '"', '\"')
+    $probe = $q.Nrql.Replace("{{branch}}", $branchList)
+    $escaped = ($probe -replace '\\', '\\' -replace '"', '\"')
     $gql = "{ actor { account(id: $AccountId) { nrql(query: `"$escaped`") { results } } } }"
     $res = Invoke-NerdGraph $gql
 
@@ -118,19 +124,22 @@ Write-Head "Publicando"
 $search = Invoke-NerdGraph "{ actor { entitySearch(query: `"name = '$($dashboard.name)' AND type = 'DASHBOARD'`") { results { entities { guid name } } } } }"
 $existing = $search.data.actor.entitySearch.results.entities | Where-Object { $_.name -eq $dashboard.name } | Select-Object -First 1
 
-function ConvertTo-GraphQLLiteral($obj) {
+function ConvertTo-GraphQLLiteral($obj, [bool]$Json = $false) {
     if ($null -eq $obj) { return "null" }
     if ($obj -is [bool]) { return $obj.ToString().ToLower() }
     if ($obj -is [int] -or $obj -is [long] -or $obj -is [double] -or $obj -is [decimal]) { return "$obj" }
     if ($obj -is [string]) {
-        # PUBLIC_READ_WRITE e enum no schema: enum nao leva aspas.
-        if ($obj -cmatch '^[A-Z][A-Z_]+$' -and $obj.Length -gt 3) { return $obj }
+        # Enum do schema (PUBLIC_READ_WRITE, NRQL, STRING) vai sem aspas; dentro de rawConfiguration, que e JSON
+        # livre, um CRITICAL sem aspas deixaria de ser texto.
+        if (-not $Json -and $obj -cmatch '^[A-Z][A-Z_]+$' -and $obj.Length -gt 3) { return $obj }
         return (ConvertTo-Json $obj -Compress)
     }
     if ($obj -is [array] -or $obj -is [System.Collections.IEnumerable]) {
-        return "[" + (($obj | ForEach-Object { ConvertTo-GraphQLLiteral $_ }) -join ",") + "]"
+        return "[" + (($obj | ForEach-Object { ConvertTo-GraphQLLiteral $_ $Json }) -join ",") + "]"
     }
-    $fields = foreach ($p in $obj.PSObject.Properties) { "$($p.Name):$(ConvertTo-GraphQLLiteral $p.Value)" }
+    $fields = foreach ($p in $obj.PSObject.Properties) {
+        "$($p.Name):$(ConvertTo-GraphQLLiteral $p.Value ($Json -or $p.Name -eq 'rawConfiguration'))"
+    }
     return "{" + ($fields -join ",") + "}"
 }
 

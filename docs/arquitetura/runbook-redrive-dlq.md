@@ -9,6 +9,11 @@ Toda mensagem que falha `maxReceiveCount` vezes vai para a DLQ da fila, e a saga
 Use este runbook quando uma DLQ tiver mais de zero mensagens ou quando uma saga estiver em `COMPENSATING` há mais tempo que
 as retentativas explicam.
 
+O aviso chega pelo alerta **DLQ com mensagem** da política `Car Workshop — Fase 4`: ele abre quando `saga_dlq_messages` passa
+de 0 por 2 minutos. Como a condição separa por fila, o alvo do incidente deve ser a fila (a confirmar na sessão do B8). A página **DLQ** do painel mostra a profundidade de cada fila e as linhas
+`leaving it for the redrive policy` por serviço. O incidente fecha sozinho depois que a DLQ volta a 0. Se a métrica aparecer
+como `NaN`, a leitura da fila falhou: o `WARN` está no log do serviço, e o alerta não abre por isso.
+
 | DLQ | Fila de origem | Quem consome a origem | Tentativas · visibilidade |
 |---|---|---|---|
 | `execution-commands-dlq.fifo` | `execution-commands.fifo` | Execution | 3 · 30 s |
@@ -53,9 +58,14 @@ Duas armadilhas medidas:
 
 - **Procure pelo rótulo, com `--tail=-1`.** Com duas réplicas, `deployment/billing-service` lê um pod só: deu 6 linhas da
   OS, contra 8 pelo rótulo. Sem `--tail=-1`, o rótulo traz só as últimas 10 linhas de cada pod.
-- **A linha da falha não traz o `correlationId`.** O `mdc` dela vem vazio: o `catch` roda depois que o `try` com recurso
-  fechou o contexto de log. Por isso a busca é pelo texto da falha. A causa está em `exception.message`, que no estorno cita
-  o `paymentId` do envelope.
+- **Busque pelo `sagaId` do envelope, não pelo texto.** A linha da falha leva o contexto da mensagem: `correlationId`,
+  `sagaId` e `branchId`, que no New Relic chegam como `context.correlationId`, `context.sagaId` e `context.branchId`. A
+  causa vem em `error.message`, que no estorno cita o `paymentId` do envelope. Uma consulta traz a falha e o que veio antes
+  dela, nos três serviços:
+
+  ```sql
+  SELECT timestamp, entity.name, level, message, error.message FROM Log WHERE context.sagaId = '<sagaId do envelope>' SINCE 1 day ago
+  ```
 
 ## 2. Classificar
 

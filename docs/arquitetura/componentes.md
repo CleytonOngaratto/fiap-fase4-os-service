@@ -98,17 +98,29 @@ lê o que precisa, sem nenhum identificador fixo no código.
 
 ## Observabilidade
 
-Uma entidade de APM **por serviço**, com o agente embutido na imagem. Os logs saem em JSON com
-`correlationId` e `sagaId` como campos, e o objetivo é seguir **a mesma ordem de serviço nos três serviços** com
-uma consulta só. As métricas de negócio da fase anterior continuam, agora com a filial como dimensão.
+Uma entidade de APM **por serviço**, com o agente embutido na imagem. Os logs saem em JSON com `correlationId`,
+`sagaId` e `branchId` como campos, inclusive na linha de erro, e o objetivo é seguir **a mesma ordem de serviço nos três
+serviços** com uma consulta só. O traço distribuído atravessa a mensageria pelo contexto guardado no outbox
+([ADR-010](adr/ADR-010-rastreamento-distribuido.md)).
+
+| Peça | Onde | O que faz |
+|---|---|---|
+| `TraceContext` / `NewRelicTraceContext` | os 3, em `infrastructure/observability` | única porta para a API do agente: captura e aceita o contexto de traço, nomeia a transação e registra o erro tratado. Nunca lança |
+| `trace_context` / `traceContext` | outbox do OS e do Billing; item `OUTBOX#` do Execution | o contexto do passo que gravou o evento; o relay só o copia para os atributos da mensagem |
+| `SagaMetricsCollector` | OS | a cada 30 s, `saga_instances{state,branch}`, `saga_compensations{reason,branch}` e `saga_overdue{branch}`, com zero explícito em toda combinação |
+| `DeadLetterQueueGauge` | os 3 | a cada 30 s, `saga_dlq_messages{queue}` da DLQ da fila que o serviço consome, achada pelo `RedrivePolicy`; falha de leitura vira `NaN`, nunca 0 |
+| `WorkOrderMetricsInitializer` | OS | registra com zero, no boot, as séries `workorder_*` de cada status e filial, porque o New Relic perde o primeiro incremento de uma série nova |
+
+O painel `Car Workshop — Fase 4` e a política de alertas de mesmo nome estão em `k8s/newrelic/` deste repositório e são
+publicados pelos scripts de `scripts/`. O painel filtra por filial nas páginas de ordens de serviço, saga e pagamentos;
+DLQ, API e infraestrutura mostram os 3 serviços. Os pagamentos são contados pela linha `<evento> published for Work Order`
+do Billing, e um teste fixa esse texto.
 
 ## O que ainda não existe
 
 Os componentes deste diagrama já rodaram juntos no EKS ([execuções de 2026-11-05](matriz-de-compensacao.md#execução-no-eks)).
-Falta a camada de observabilidade distribuída. Medido no New Relic naquela sessão:
+A observabilidade distribuída está no código e foi medida num ambiente local com o agente real
+([ADR-010](adr/ADR-010-rastreamento-distribuido.md)). Falta a prova no EKS:
 
-- O traço distribuído **não atravessa a mensageria**: 0 de 72 traços com mensagens e chamadas web passaram de um serviço.
-  Pelo HTTP ele já atravessa: o Execution chamando o catálogo do OS.
-- O **Billing não envia `correlationId` nem `sagaId`** ao New Relic, então a consulta por ordem de serviço só alcança o OS e
-  o Execution.
-- Os painéis e os alertas desta fase ainda não foram publicados, e não há métricas de saga, de pagamento nem de DLQ.
+- a travessia pelo SNS (Execution e Billing → OS), que não tem emulador local;
+- o painel e os alertas publicados, e o alerta de DLQ disparando de verdade.

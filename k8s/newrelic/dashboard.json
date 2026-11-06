@@ -1,14 +1,14 @@
 {
   "name": "Car Workshop — Fase 4",
-  "description": "Cada NRQL daqui foi executada contra a conta antes de entrar no arquivo. Os painéis de negócio dependem do newrelic-prometheus-agent (instalado pelo fiap-fase4-infra-k8s, k8s/newrelic/values.yaml) raspando o /q/metrics da app: sem ele as métricas de negócio existem só por pod e o painel nasce vazio.",
+  "description": "Saga de OS nos 3 microsserviços: ordens, saga, pagamentos, DLQ, API e infraestrutura. O filtro de filial vale para as 3 primeiras páginas.",
   "permissions": "PUBLIC_READ_WRITE",
   "pages": [
     {
       "name": "Ordens de Serviço",
-      "description": "Volume e tempo por status. Fonte: Micrometer da app via prometheus-agent.",
+      "description": "Métricas do os-service por filial. Toda série nasce com zero no boot do pod.",
       "widgets": [
         {
-          "title": "Volume de OS por status",
+          "title": "OS por status ao longo do dia",
           "layout": {
             "column": 1,
             "row": 1,
@@ -22,7 +22,7 @@
             "nrqlQueries": [
               {
                 "accountId": 8439524,
-                "query": "SELECT sum(workorder_status_changes_total) FROM Metric WHERE app = 'car-workshop-api' FACET status TIMESERIES SINCE 1 day ago"
+                "query": "SELECT sum(workorder_status_changes_total) FROM Metric WHERE app = 'car-workshop-api' AND branch IN ({{branch}}) FACET status TIMESERIES SINCE 1 day ago"
               }
             ],
             "platformOptions": {
@@ -31,7 +31,7 @@
           }
         },
         {
-          "title": "OS criadas hoje",
+          "title": "OS abertas hoje",
           "layout": {
             "column": 9,
             "row": 1,
@@ -45,7 +45,7 @@
             "nrqlQueries": [
               {
                 "accountId": 8439524,
-                "query": "SELECT sum(workorder_status_changes_total) AS 'OS criadas' FROM Metric WHERE app = 'car-workshop-api' AND status = 'RECEIVED' SINCE today"
+                "query": "SELECT sum(workorder_status_changes_total) AS 'OS abertas' FROM Metric WHERE app = 'car-workshop-api' AND branch IN ({{branch}}) AND status = 'RECEIVED' SINCE today"
               }
             ],
             "platformOptions": {
@@ -54,11 +54,34 @@
           }
         },
         {
-          "title": "Tempo médio da criação até cada status (segundos)",
+          "title": "Tempo médio por etapa, em segundos (aproximação: cada média vem de um grupo diferente de OS)",
           "layout": {
             "column": 1,
             "row": 4,
             "width": 8,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.billboard"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountId": 8439524,
+                "query": "SELECT filter(sum(workorder_time_to_status_seconds_sum), WHERE status = 'UNDER_DIAGNOSIS') / filter(sum(workorder_time_to_status_seconds_count), WHERE status = 'UNDER_DIAGNOSIS') AS 'até o diagnóstico', filter(sum(workorder_time_to_status_seconds_sum), WHERE status = 'PENDING_APPROVAL') / filter(sum(workorder_time_to_status_seconds_count), WHERE status = 'PENDING_APPROVAL') - filter(sum(workorder_time_to_status_seconds_sum), WHERE status = 'UNDER_DIAGNOSIS') / filter(sum(workorder_time_to_status_seconds_count), WHERE status = 'UNDER_DIAGNOSIS') AS 'diagnóstico até o orçamento', filter(sum(workorder_time_to_status_seconds_sum), WHERE status = 'AWAITING_PAYMENT') / filter(sum(workorder_time_to_status_seconds_count), WHERE status = 'AWAITING_PAYMENT') - filter(sum(workorder_time_to_status_seconds_sum), WHERE status = 'PENDING_APPROVAL') / filter(sum(workorder_time_to_status_seconds_count), WHERE status = 'PENDING_APPROVAL') AS 'aprovação', filter(sum(workorder_time_to_status_seconds_sum), WHERE status = 'IN_PROGRESS') / filter(sum(workorder_time_to_status_seconds_count), WHERE status = 'IN_PROGRESS') - filter(sum(workorder_time_to_status_seconds_sum), WHERE status = 'AWAITING_PAYMENT') / filter(sum(workorder_time_to_status_seconds_count), WHERE status = 'AWAITING_PAYMENT') AS 'pagamento', filter(sum(workorder_time_to_status_seconds_sum), WHERE status = 'COMPLETED') / filter(sum(workorder_time_to_status_seconds_count), WHERE status = 'COMPLETED') - filter(sum(workorder_time_to_status_seconds_sum), WHERE status = 'IN_PROGRESS') / filter(sum(workorder_time_to_status_seconds_count), WHERE status = 'IN_PROGRESS') AS 'reparo' FROM Metric WHERE app = 'car-workshop-api' AND branch IN ({{branch}}) SINCE 1 day ago"
+              }
+            ],
+            "platformOptions": {
+              "ignoreTimeRange": false
+            }
+          }
+        },
+        {
+          "title": "Tempo médio da abertura até cada status (segundos)",
+          "layout": {
+            "column": 9,
+            "row": 4,
+            "width": 4,
             "height": 3
           },
           "visualization": {
@@ -68,7 +91,7 @@
             "nrqlQueries": [
               {
                 "accountId": 8439524,
-                "query": "SELECT sum(workorder_time_to_status_seconds_sum)/sum(workorder_time_to_status_seconds_count) AS 'segundos' FROM Metric WHERE app = 'car-workshop-api' FACET status SINCE 1 day ago"
+                "query": "SELECT sum(workorder_time_to_status_seconds_sum)/sum(workorder_time_to_status_seconds_count) AS 'segundos' FROM Metric WHERE app = 'car-workshop-api' AND branch IN ({{branch}}) FACET status SINCE 1 day ago"
               }
             ],
             "platformOptions": {
@@ -77,10 +100,10 @@
           }
         },
         {
-          "title": "Tempo médio de conclusão (criação → COMPLETED)",
+          "title": "Tempo médio da abertura à conclusão (segundos)",
           "layout": {
-            "column": 9,
-            "row": 4,
+            "column": 1,
+            "row": 7,
             "width": 4,
             "height": 3
           },
@@ -91,7 +114,7 @@
             "nrqlQueries": [
               {
                 "accountId": 8439524,
-                "query": "SELECT sum(workorder_completion_time_seconds_sum)/sum(workorder_completion_time_seconds_count) AS 'segundos' FROM Metric WHERE app = 'car-workshop-api' SINCE 1 day ago"
+                "query": "SELECT sum(workorder_completion_time_seconds_sum)/sum(workorder_completion_time_seconds_count) AS 'segundos' FROM Metric WHERE app = 'car-workshop-api' AND branch IN ({{branch}}) SINCE 1 day ago"
               }
             ],
             "platformOptions": {
@@ -100,11 +123,11 @@
           }
         },
         {
-          "title": "Transições por status (toda OS passa por RECEIVED)",
+          "title": "Transições por status",
           "layout": {
-            "column": 1,
+            "column": 5,
             "row": 7,
-            "width": 12,
+            "width": 8,
             "height": 3
           },
           "visualization": {
@@ -114,7 +137,7 @@
             "nrqlQueries": [
               {
                 "accountId": 8439524,
-                "query": "SELECT sum(workorder_status_changes_total) FROM Metric WHERE app = 'car-workshop-api' FACET status SINCE 1 day ago"
+                "query": "SELECT sum(workorder_status_changes_total) FROM Metric WHERE app = 'car-workshop-api' AND branch IN ({{branch}}) FACET status SINCE 1 day ago"
               }
             ],
             "platformOptions": {
@@ -125,11 +148,11 @@
       ]
     },
     {
-      "name": "API — latência e erros",
-      "description": "http_server_requests_seconds do Micrometer (uri templada, method, status, outcome). A separação 5xx/4xx é deliberada: 5xx é a aplicação falhando e é o que o alerta vigia; 4xx é o cliente pedindo o impossível — transição de status inválida, token ausente — e misturar os dois num painel de 'erros' faz a app parecer quebrada quando ela está aplicando regra de negócio.",
+      "name": "Saga",
+      "description": "Gauges lidos da tabela saga_instance a cada 30 s. Os 2 pods reportam o mesmo valor: latest, nunca sum.",
       "widgets": [
         {
-          "title": "Latência média por rota (ms)",
+          "title": "Sagas por estado agora",
           "layout": {
             "column": 1,
             "row": 1,
@@ -137,13 +160,13 @@
             "height": 3
           },
           "visualization": {
-            "id": "viz.line"
+            "id": "viz.bar"
           },
           "rawConfiguration": {
             "nrqlQueries": [
               {
                 "accountId": 8439524,
-                "query": "SELECT sum(http_server_requests_seconds_sum)/sum(http_server_requests_seconds_count)*1000 AS 'ms' FROM Metric WHERE app = 'car-workshop-api' AND outcome = 'SUCCESS' FACET uri TIMESERIES SINCE 1 hour ago LIMIT 6"
+                "query": "SELECT latest(saga_instances) FROM Metric WHERE app = 'car-workshop-api' AND branch IN ({{branch}}) FACET state, branch SINCE 10 minutes ago LIMIT 50"
               }
             ],
             "platformOptions": {
@@ -152,7 +175,7 @@
           }
         },
         {
-          "title": "Pico de latência (cold start da JVM; o alerta olha a média)",
+          "title": "Sagas paradas além do prazo (o alerta vigia; esperado 0)",
           "layout": {
             "column": 9,
             "row": 1,
@@ -166,7 +189,36 @@
             "nrqlQueries": [
               {
                 "accountId": 8439524,
-                "query": "SELECT max(http_server_requests_seconds_max)*1000 AS 'ms' FROM Metric WHERE app = 'car-workshop-api' SINCE 1 hour ago"
+                "query": "SELECT latest(saga_overdue) AS 'paradas' FROM Metric WHERE app = 'car-workshop-api' AND branch IN ({{branch}}) FACET branch SINCE 10 minutes ago"
+              }
+            ],
+            "platformOptions": {
+              "ignoreTimeRange": false
+            },
+            "thresholds": [
+              {
+                "alertSeverity": "CRITICAL",
+                "value": 1
+              }
+            ]
+          }
+        },
+        {
+          "title": "Sagas em andamento ao longo do tempo",
+          "layout": {
+            "column": 1,
+            "row": 4,
+            "width": 12,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountId": 8439524,
+                "query": "SELECT latest(saga_instances) FROM Metric WHERE app = 'car-workshop-api' AND branch IN ({{branch}}) AND state NOT IN ('COMPLETED', 'COMPENSATED') FACET state, branch TIMESERIES SINCE 3 hours ago LIMIT 20"
               }
             ],
             "platformOptions": {
@@ -175,11 +227,55 @@
           }
         },
         {
-          "title": "Falhas da aplicação (5xx) — o que o alerta vigia",
+          "title": "Compensações por motivo (sagas canceladas no banco)",
           "layout": {
             "column": 1,
-            "row": 4,
+            "row": 7,
+            "width": 8,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.bar"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountId": 8439524,
+                "query": "SELECT latest(saga_compensations) FROM Metric WHERE app = 'car-workshop-api' AND branch IN ({{branch}}) FACET reason, branch SINCE 10 minutes ago LIMIT 50"
+              }
+            ],
+            "platformOptions": {
+              "ignoreTimeRange": false
+            }
+          }
+        },
+        {
+          "title": "Parada além do prazo",
+          "layout": {
+            "column": 9,
+            "row": 7,
             "width": 4,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.markdown"
+          },
+          "rawConfiguration": {
+            "text": "**Conta como parada:** `AWAITING_APPROVAL` ou `AWAITING_PAYMENT` com o prazo vencido há mais de 2 min, ou `COMPENSATING` sem mudança há mais de 15 min. A varredura de prazos roda a cada 30 s, então mais de 2 min vencido indica que ela não está compensando."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Pagamentos",
+      "description": "Contados pela linha \"<evento> published for Work Order\" do billing-service, uma por mensagem publicada.",
+      "widgets": [
+        {
+          "title": "Pagamentos por desfecho",
+          "layout": {
+            "column": 1,
+            "row": 1,
+            "width": 12,
             "height": 3
           },
           "visualization": {
@@ -189,7 +285,7 @@
             "nrqlQueries": [
               {
                 "accountId": 8439524,
-                "query": "SELECT filter(sum(http_server_requests_seconds_count), WHERE outcome = 'SERVER_ERROR') OR 0 AS 'erros 5xx' FROM Metric WHERE app = 'car-workshop-api' SINCE 1 hour ago"
+                "query": "SELECT filter(count(*), WHERE message LIKE 'PaymentRequested published for Work Order%') AS 'cobranças criadas', filter(count(*), WHERE message LIKE 'PaymentConfirmed published for Work Order%') AS 'confirmados', filter(count(*), WHERE message LIKE 'PaymentAttemptRejected published for Work Order%') AS 'tentativas recusadas', filter(count(*), WHERE message LIKE 'PaymentRequestFailed published for Work Order%') AS 'cobranças não criadas', filter(count(*), WHERE message LIKE 'PaymentCanceled published for Work Order%') AS 'cancelados', filter(count(*), WHERE message LIKE 'PaymentRefunded published for Work Order%') AS 'estornados (0 na sandbox, ADR-008)' FROM Log WHERE entity.name = 'billing-service' AND context.branchId IN ({{branch}}) SINCE 1 day ago"
               }
             ],
             "platformOptions": {
@@ -198,9 +294,9 @@
           }
         },
         {
-          "title": "Falhas da aplicação (5xx) ao longo do tempo",
+          "title": "Eventos de pagamento ao longo do tempo",
           "layout": {
-            "column": 5,
+            "column": 1,
             "row": 4,
             "width": 8,
             "height": 3
@@ -212,7 +308,7 @@
             "nrqlQueries": [
               {
                 "accountId": 8439524,
-                "query": "SELECT filter(sum(http_server_requests_seconds_count), WHERE outcome = 'SERVER_ERROR') OR 0 AS '5xx' FROM Metric WHERE app = 'car-workshop-api' TIMESERIES SINCE 1 hour ago"
+                "query": "SELECT count(*) FROM Log WHERE entity.name = 'billing-service' AND context.branchId IN ({{branch}}) AND message LIKE 'Payment% published for Work Order%' FACET capture(message, r'(?P<evento>Payment[A-Za-z]+) published for Work Order.*') TIMESERIES SINCE 1 day ago"
               }
             ],
             "platformOptions": {
@@ -221,7 +317,236 @@
           }
         },
         {
-          "title": "Throughput por desfecho",
+          "title": "Recusas e falhas nos últimos 15 min (o alerta abre com 3)",
+          "layout": {
+            "column": 9,
+            "row": 4,
+            "width": 4,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.billboard"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountId": 8439524,
+                "query": "SELECT count(*) AS 'recusas e falhas' FROM Log WHERE entity.name = 'billing-service' AND context.branchId IN ({{branch}}) AND (message LIKE 'PaymentAttemptRejected published for Work Order%' OR message LIKE 'PaymentRequestFailed published for Work Order%') SINCE 15 minutes ago"
+              }
+            ],
+            "platformOptions": {
+              "ignoreTimeRange": false
+            },
+            "thresholds": [
+              {
+                "alertSeverity": "CRITICAL",
+                "value": 3
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "DLQ",
+      "description": "Profundidade das 3 DLQs, lida pelo serviço que consome a fila de origem. Não tem filial.",
+      "widgets": [
+        {
+          "title": "Mensagens nas DLQs (o alerta vigia; esperado 0)",
+          "layout": {
+            "column": 1,
+            "row": 1,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.billboard"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountId": 8439524,
+                "query": "SELECT latest(saga_dlq_messages) FROM Metric FACET queue SINCE 10 minutes ago"
+              }
+            ],
+            "platformOptions": {
+              "ignoreTimeRange": false
+            },
+            "thresholds": [
+              {
+                "alertSeverity": "CRITICAL",
+                "value": 1
+              }
+            ]
+          }
+        },
+        {
+          "title": "DLQs ao longo do tempo",
+          "layout": {
+            "column": 7,
+            "row": 1,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountId": 8439524,
+                "query": "SELECT max(saga_dlq_messages) FROM Metric FACET queue TIMESERIES SINCE 3 hours ago"
+              }
+            ],
+            "platformOptions": {
+              "ignoreTimeRange": false
+            }
+          }
+        },
+        {
+          "title": "Mensagens deixadas para o redrive, por serviço",
+          "layout": {
+            "column": 1,
+            "row": 4,
+            "width": 8,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountId": 8439524,
+                "query": "SELECT count(*) FROM Log WHERE message LIKE '%leaving it for the redrive policy%' FACET entity.name TIMESERIES SINCE 3 hours ago"
+              }
+            ],
+            "platformOptions": {
+              "ignoreTimeRange": false
+            }
+          }
+        },
+        {
+          "title": "Como tratar",
+          "layout": {
+            "column": 9,
+            "row": 4,
+            "width": 4,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.markdown"
+          },
+          "rawConfiguration": {
+            "text": "**DLQ com mensagem:** leia o envelope e classifique pelo `runbook-redrive-dlq.md` (os-service, `docs/arquitetura`) antes de reenviar ou descartar. O contexto da falha está no log: `FROM Log WHERE context.sagaId = '<sagaId do envelope>'`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "API",
+      "description": "Os 3 serviços. Erros vêm de Transaction (a métrica perde a primeira amostra de cada série); latência e vazão vêm da métrica.",
+      "widgets": [
+        {
+          "title": "Falhas 5xx por serviço (o alerta vigia)",
+          "layout": {
+            "column": 1,
+            "row": 1,
+            "width": 8,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountId": 8439524,
+                "query": "SELECT filter(count(*), WHERE http.statusCode >= 500) AS '5xx' FROM Transaction WHERE appName IN ('car-workshop-api', 'billing-service', 'execution-service') AND request.uri NOT LIKE '%/q/%' FACET appName TIMESERIES SINCE 3 hours ago"
+              }
+            ],
+            "platformOptions": {
+              "ignoreTimeRange": false
+            }
+          }
+        },
+        {
+          "title": "5xx na última hora",
+          "layout": {
+            "column": 9,
+            "row": 1,
+            "width": 4,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.billboard"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountId": 8439524,
+                "query": "SELECT filter(count(*), WHERE http.statusCode >= 500) AS '5xx' FROM Transaction WHERE appName IN ('car-workshop-api', 'billing-service', 'execution-service') AND request.uri NOT LIKE '%/q/%' FACET appName SINCE 1 hour ago"
+              }
+            ],
+            "platformOptions": {
+              "ignoreTimeRange": false
+            },
+            "thresholds": [
+              {
+                "alertSeverity": "CRITICAL",
+                "value": 1
+              }
+            ]
+          }
+        },
+        {
+          "title": "Recusas por regra de negócio (4xx): não são falhas",
+          "layout": {
+            "column": 1,
+            "row": 4,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.table"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountId": 8439524,
+                "query": "SELECT count(*) AS 'requisições' FROM Transaction WHERE appName IN ('car-workshop-api', 'billing-service', 'execution-service') AND http.statusCode >= 400 AND http.statusCode < 500 FACET appName, request.uri, http.statusCode SINCE 3 hours ago LIMIT 20"
+              }
+            ],
+            "platformOptions": {
+              "ignoreTimeRange": false
+            }
+          }
+        },
+        {
+          "title": "Latência média por serviço, ms (métrica: a série nova perde a 1ª amostra)",
+          "layout": {
+            "column": 7,
+            "row": 4,
+            "width": 6,
+            "height": 3
+          },
+          "visualization": {
+            "id": "viz.line"
+          },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              {
+                "accountId": 8439524,
+                "query": "SELECT sum(http_server_requests_seconds_sum)/sum(http_server_requests_seconds_count)*1000 AS 'ms' FROM Metric WHERE app IN ('car-workshop-api', 'billing-service', 'execution-service') AND outcome = 'SUCCESS' AND uri NOT LIKE '%/q/%' FACET app TIMESERIES SINCE 3 hours ago"
+              }
+            ],
+            "platformOptions": {
+              "ignoreTimeRange": false
+            }
+          }
+        },
+        {
+          "title": "Requisições por serviço (métrica)",
           "layout": {
             "column": 1,
             "row": 7,
@@ -235,7 +560,7 @@
             "nrqlQueries": [
               {
                 "accountId": 8439524,
-                "query": "SELECT sum(http_server_requests_seconds_count) FROM Metric WHERE app = 'car-workshop-api' FACET outcome TIMESERIES SINCE 1 hour ago"
+                "query": "SELECT sum(http_server_requests_seconds_count) FROM Metric WHERE app IN ('car-workshop-api', 'billing-service', 'execution-service') AND uri NOT LIKE '%/q/%' FACET app TIMESERIES SINCE 3 hours ago"
               }
             ],
             "platformOptions": {
@@ -244,7 +569,7 @@
           }
         },
         {
-          "title": "Requisições recusadas por regra de negócio (4xx) — não são falhas",
+          "title": "Mensagens consumidas por fila e tipo",
           "layout": {
             "column": 7,
             "row": 7,
@@ -258,7 +583,7 @@
             "nrqlQueries": [
               {
                 "accountId": 8439524,
-                "query": "SELECT sum(http_server_requests_seconds_count) AS 'requisicoes' FROM Metric WHERE app = 'car-workshop-api' AND outcome = 'CLIENT_ERROR' FACET status, uri, method SINCE 1 hour ago LIMIT 20"
+                "query": "SELECT count(*) AS 'mensagens', filter(count(*), WHERE error IS true) AS 'com erro' FROM Transaction WHERE appName IN ('car-workshop-api', 'billing-service', 'execution-service') AND name LIKE 'OtherTransaction/Message/%' FACET appName, name SINCE 3 hours ago LIMIT 30"
               }
             ],
             "platformOptions": {
@@ -269,8 +594,8 @@
       ]
     },
     {
-      "name": "Infraestrutura e uptime",
-      "description": "Uptime pelo `up` do scrape do Prometheus; CPU e memória pelo nri-bundle (K8sContainerSample, nos mesmos campos de % do request que o HPA compara — o painel concorda com `kubectl get hpa`).",
+      "name": "Infra",
+      "description": "Os 3 serviços no cluster fiap-fase4-eks.",
       "widgets": [
         {
           "title": "Pods respondendo ao scrape",
@@ -287,7 +612,7 @@
             "nrqlQueries": [
               {
                 "accountId": 8439524,
-                "query": "SELECT uniqueCount(pod) AS 'pods respondendo' FROM Metric WHERE app = 'car-workshop-api' AND metricName = 'up' SINCE 10 minutes ago"
+                "query": "SELECT uniqueCount(pod) AS 'pods' FROM Metric WHERE app IN ('car-workshop-api', 'billing-service', 'execution-service') AND metricName = 'up' FACET app SINCE 10 minutes ago"
               }
             ],
             "platformOptions": {
@@ -296,7 +621,7 @@
           }
         },
         {
-          "title": "Uptime por pod",
+          "title": "Réplicas desejadas e prontas (HPA)",
           "layout": {
             "column": 5,
             "row": 1,
@@ -310,7 +635,7 @@
             "nrqlQueries": [
               {
                 "accountId": 8439524,
-                "query": "SELECT latest(up) FROM Metric WHERE app = 'car-workshop-api' FACET pod TIMESERIES SINCE 1 hour ago"
+                "query": "SELECT latest(podsDesired) AS 'desejadas', latest(podsReady) AS 'prontas' FROM K8sDeploymentSample WHERE clusterName = 'fiap-fase4-eks' AND deploymentName IN ('car-workshop-api', 'billing-service', 'execution-service') FACET deploymentName TIMESERIES SINCE 3 hours ago"
               }
             ],
             "platformOptions": {
@@ -319,7 +644,7 @@
           }
         },
         {
-          "title": "CPU por pod — % do request (o alvo do HPA é 60%)",
+          "title": "CPU por pod, % do request (alvo do HPA: 60%)",
           "layout": {
             "column": 1,
             "row": 4,
@@ -333,7 +658,7 @@
             "nrqlQueries": [
               {
                 "accountId": 8439524,
-                "query": "SELECT average(requestedCpuCoresUtilization) AS '% do request' FROM K8sContainerSample WHERE clusterName = 'fiap-fase4-eks' AND containerName = 'car-workshop-api' FACET podName TIMESERIES SINCE 3 hours ago"
+                "query": "SELECT average(requestedCpuCoresUtilization) AS '% do request' FROM K8sContainerSample WHERE clusterName = 'fiap-fase4-eks' AND containerName IN ('car-workshop-api', 'billing-service', 'execution-service') FACET podName TIMESERIES SINCE 3 hours ago"
               }
             ],
             "platformOptions": {
@@ -342,7 +667,7 @@
           }
         },
         {
-          "title": "Memória por pod — % do request (o alvo do HPA é 80%)",
+          "title": "Memória por pod, % do request (HPA em 80%; acima de 53% a 3ª réplica não desce)",
           "layout": {
             "column": 7,
             "row": 4,
@@ -356,7 +681,7 @@
             "nrqlQueries": [
               {
                 "accountId": 8439524,
-                "query": "SELECT average(requestedMemoryUtilization) AS '% do request' FROM K8sContainerSample WHERE clusterName = 'fiap-fase4-eks' AND containerName = 'car-workshop-api' FACET podName TIMESERIES SINCE 3 hours ago"
+                "query": "SELECT average(requestedMemoryUtilization) AS '% do request' FROM K8sContainerSample WHERE clusterName = 'fiap-fase4-eks' AND containerName IN ('car-workshop-api', 'billing-service', 'execution-service') FACET podName TIMESERIES SINCE 3 hours ago"
               }
             ],
             "platformOptions": {
@@ -365,7 +690,7 @@
           }
         },
         {
-          "title": "Réplicas da aplicação (autoescala do HPA)",
+          "title": "Uptime por pod",
           "layout": {
             "column": 1,
             "row": 7,
@@ -379,7 +704,7 @@
             "nrqlQueries": [
               {
                 "accountId": 8439524,
-                "query": "SELECT latest(podsDesired) AS 'desejadas', latest(podsReady) AS 'prontas' FROM K8sDeploymentSample WHERE clusterName = 'fiap-fase4-eks' AND deploymentName = 'car-workshop-api' TIMESERIES SINCE 3 hours ago"
+                "query": "SELECT latest(up) FROM Metric WHERE app IN ('car-workshop-api', 'billing-service', 'execution-service') FACET app, pod TIMESERIES SINCE 3 hours ago"
               }
             ],
             "platformOptions": {
@@ -388,6 +713,31 @@
           }
         }
       ]
+    }
+  ],
+  "variables": [
+    {
+      "name": "branch",
+      "title": "Filial",
+      "type": "NRQL",
+      "nrqlQuery": {
+        "accountIds": [
+          8439524
+        ],
+        "query": "SELECT uniques(branch) FROM Metric WHERE metricName = 'workorder_status_changes_total' SINCE 1 week ago"
+      },
+      "defaultValues": [
+        {
+          "value": {
+            "string": "*"
+          }
+        }
+      ],
+      "isMultiSelection": true,
+      "replacementStrategy": "STRING",
+      "options": {
+        "ignoreTimeRange": true
+      }
     }
   ]
 }
