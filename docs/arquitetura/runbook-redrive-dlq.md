@@ -11,8 +11,10 @@ as retentativas explicam.
 
 O aviso chega pelo alerta **DLQ com mensagem** da política `Car Workshop — Fase 4`: ele abre quando `saga_dlq_messages` passa
 de 0 por 2 minutos. Como a condição separa por fila, o alvo do incidente é a fila: medido em 2026-11-06, com
-`os-saga-replies-dlq.fifo` como alvo na abertura e no fechamento, e como entidade afetada no e-mail da abertura. A página
-**DLQ** do painel mostra a profundidade de cada fila e as linhas `leaving it for the redrive policy` por serviço. O incidente fecha sozinho depois que a DLQ volta a 0. Se a métrica aparecer
+`os-saga-replies-dlq.fifo` como alvo na abertura e no fechamento, e como entidade afetada no e-mail da abertura. Os dois
+e-mails, de abertura e de fechamento, aparecem em `NrAiNotification` com `status = SUCCESS`: é ali que se confere a entrega
+sem abrir a caixa de correio. A página **DLQ** do painel mostra a profundidade de cada fila e as linhas
+`leaving it for the redrive policy` por serviço. O incidente fecha sozinho depois que a DLQ volta a 0. Se a métrica aparecer
 como `NaN`, a leitura da fila falhou: o `WARN` está no log do serviço, e o alerta não abre por isso.
 
 | DLQ | Fila de origem | Quem consome a origem | Tentativas · visibilidade |
