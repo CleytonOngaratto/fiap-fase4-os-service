@@ -119,8 +119,10 @@ do Billing, e um teste fixa esse texto.
 ## O que ainda não existe
 
 Os componentes deste diagrama já rodaram juntos no EKS ([execuções de 2026-11-05](matriz-de-compensacao.md#execução-no-eks)).
-A observabilidade distribuída está no código e foi medida num ambiente local com o agente real
-([ADR-010](adr/ADR-010-rastreamento-distribuido.md)). Falta a prova no EKS:
+A observabilidade distribuída foi provada lá em 2026-11-06 e 2026-11-07 ([ADR-010](adr/ADR-010-rastreamento-distribuido.md)):
+o traço atravessa o SNS nos dois sentidos e sai do webhook do Mercado Pago, o painel e a política estão publicados, o
+alerta de DLQ abriu e fechou sozinho com a fila como alvo, e o `Healthcheck down` disparou pela perda de sinal no destroy,
+com e-mail. Ficam sem prova:
 
-- a travessia pelo SNS (Execution e Billing → OS), que não tem emulador local;
-- o painel e os alertas publicados, e o alerta de DLQ disparando de verdade.
+- os outros 4 alertas (5xx, latência, saga parada e falha de pagamento), validados só pela consulta e pelo sinal;
+- escalar por tráfego sustentado, porque o teste de carga ficou fora do escopo.
