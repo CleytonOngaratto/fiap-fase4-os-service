@@ -485,7 +485,7 @@
             "nrqlQueries": [
               {
                 "accountId": 8439524,
-                "query": "SELECT filter(count(*), WHERE http.statusCode >= 500) AS '5xx' FROM Transaction WHERE appName IN ('car-workshop-api', 'billing-service', 'execution-service') AND request.uri NOT LIKE '%/q/%' FACET appName SINCE 1 hour ago"
+                "query": "SELECT filter(count(*), WHERE http.statusCode >= 500) AS '5xx', count(*) AS 'requisições' FROM Transaction WHERE appName IN ('car-workshop-api', 'billing-service', 'execution-service') AND request.uri NOT LIKE '%/q/%' FACET appName SINCE 1 hour ago"
               }
             ],
             "platformOptions": {
