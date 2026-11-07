@@ -82,7 +82,10 @@ calar nesse caso deixaria a saga em `COMPENSATING` para sempre.
 > quando o provedor diz `rejected` ou `cancelled` ([ADR-008](adr/ADR-008-pagamento-mercado-pago.md)). Na sandbox, o mesmo
 > cancelamento responde 401 e cai na recusa comum, que já cancela: o `@F4` com o cartão `FUND` passa com ou sem o conserto,
 > e a prova do conserto é o teste puro. A prova do cenário é a linha `PaymentAttemptRejected` antes do prazo, seguida da do
-> ramo que rodou.
+> ramo que rodou. **Medido no EKS em 2026-11-07** (OS 3, saga `beeca3d9-c61e-4dbf-a522-e32c2bef28db`, `@F4` verde):
+> `PaymentAttemptRejected` (`cc_rejected_insufficient_amount`) às 00:27:52 UTC, antes do prazo das 00:29:25; vencido o
+> prazo, o cancelamento do pagamento `188245865886` recebeu 401 (`refused to cancel … compensation continues`), o Billing
+> publicou `PaymentCanceled` e a saga terminou `COMPENSATED` com `PAYMENT_EXPIRED`, com a DLQ do Billing em 0.
 
 > **F8 provado em ambiente real, sem simulação (2026-10-29).** A sandbox de contas de teste do Mercado
 > Pago recusa o estorno com `401 Unauthorized use of live credentials`, e a recusa exercitou a linha
