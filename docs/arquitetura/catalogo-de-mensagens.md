@@ -153,7 +153,7 @@ cancelamento, o comando sai sem ele, porque não há requisição de origem. Par
 | `BudgetCanceled` | Billing | `budgetId` | confirma a compensação |
 | `PaymentRequested` | Billing | `budgetId`, `paymentLink` (`init_point`), `preferenceId` | abre o prazo de pagamento |
 | `PaymentRequestFailed` | Billing | `reason` (5xx do MP esgotado) | compensa (motivo `PAYMENT_REQUEST_FAILED`) |
-| `PaymentAttemptRejected` | Billing | `statusDetail` **e** `reason`, com o mesmo valor (ver a nota abaixo) | **informativo** — registra no histórico e segue esperando até o prazo |
+| `PaymentAttemptRejected` | Billing | `statusDetail` **e** `reason`, com o mesmo valor (ver a nota abaixo) | **informativo** — registra no histórico e segue esperando até o prazo. Só sai com o pagamento `PENDING` |
 | `PaymentConfirmed` | Billing | `paymentId`, `amount` | baixa peças (local) → `StartRepair`; se a saga já compensou → `RefundPayment` (estorno automático) |
 | `PaymentCanceled` | Billing | `budgetId` | confirma a compensação |
 | `PaymentRefunded` | Billing | `paymentId`, `refundId` | confirma a compensação |

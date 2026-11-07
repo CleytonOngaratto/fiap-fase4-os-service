@@ -163,7 +163,9 @@ stateDiagram-v2
 - `REJECTED` não é o fim do orçamento rejeitado: o orquestrador responde ao `BudgetRejected` com `CancelBudget` e
   `CancelDiagnosis`, e o orçamento termina `CANCELED`, mantendo o motivo `REJECTED_BY_CUSTOMER`.
 - Tentativas recusadas (`rejected` no Mercado Pago) viram linhas em `payment_attempts` e o evento informativo
-  `PaymentAttemptRejected`. **Não** mudam o estado do pagamento.
+  `PaymentAttemptRejected`. **Não** mudam o estado do pagamento. O evento só sai com o pagamento `PENDING`: o link
+  do Checkout Pro continua pagável depois da aprovação, e a recusa que chega depois de `CONFIRMED` ou de `CANCELED`
+  fica só na tabela, sem trocar o id do pagamento guardado.
 - `CANCELED → REFUNDED` é o pagamento que chega **depois** de a saga já ter compensado: o Billing estorna
   por conta própria, grava o motivo `PAID_AFTER_CANCELLATION` e **não publica evento** — a saga já está
   `COMPENSATED` e não tem passo esperando resposta. É a primeira das duas camadas de F7; a segunda, no
