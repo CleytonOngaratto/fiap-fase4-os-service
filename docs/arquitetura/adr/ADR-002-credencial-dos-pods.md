@@ -1,9 +1,9 @@
-# ADR — Credencial AWS dos pods: `LabRole` no node group + IMDSv2 com *hop limit* 2
+# ADR-002 — Credencial AWS dos pods: `LabRole` no node group + IMDSv2 com *hop limit* 2
 
 > Escrito em 2026-10-10, com as medições feitas no AWS Academy em 2026-09-29 e confirmado na plataforma real em 2026-10-11.
 
 - **Status:** Aceita (2026-09-29)
-- **Decisores:** dono do projeto, com análise e medições do agente
+- **Decisores:** dono do projeto, com análise e medições do assistente de IA
 - **Relacionados:** [ADR-003 — borda privada](ADR-003-borda-privada.md) ·
   [catálogo de mensagens](../catalogo-de-mensagens.md) ·
   [plataforma (fiap-fase4-infra-k8s)](https://github.com/CleytonOngaratto/fiap-fase4-infra-k8s)

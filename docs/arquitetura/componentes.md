@@ -1,75 +1,54 @@
 # Componentes — visão geral da Fase 4
 
-> Escrito em 2026-10-18, no bloco do esqueleto andante. Os estados que estes componentes movem estão na
+> Escrito em 2026-10-18. Os estados que estes componentes movem estão na
 > [máquina de estados](maquina-de-estados.md); as mensagens que trafegam entre eles, no
 > [catálogo de mensagens](catalogo-de-mensagens.md).
 
-Três microsserviços independentes, cada um com repositório, infraestrutura e banco próprios. Nenhum deles lê o
-banco de outro: o que atravessa a fronteira é **mensagem** ou **chamada de API**.
+Três microsserviços independentes, cada um com repositório, infraestrutura e banco próprios e com o próprio namespace no
+cluster. Nenhum deles lê o banco de outro: o que atravessa a fronteira é **mensagem** ou **chamada de API**. As filas e os
+tópicos, um a um, estão no [catálogo de mensagens](catalogo-de-mensagens.md).
 
 ## Diagrama
 
 ```mermaid
 flowchart TB
-    subgraph clientes["Quem chama"]
-        CLI["Cliente<br/>(CPF)"]
-        ADM["Atendimento<br/>(ADMIN)"]
-        MEC["Mecânico"]
-        MP(["Mercado Pago<br/>webhook"])
-    end
-
+    USR["Cliente, atendimento e mecânico"]
     GW{{"API Gateway HTTP API<br/>rotas em allowlist · URL estável"}}
+    LAM["Lambda de CPF<br/>assina o JWT"]
     ALB{{"ALB interno<br/>regra de path por serviço"}}
 
-    subgraph eks["Kubernetes — um namespace por serviço"]
-        OS["<b>OS Service</b><br/>ordens, cadastros, auth ADMIN<br/>orquestrador da Saga"]
-        BIL["<b>Billing Service</b><br/>orçamento, aprovação,<br/>pagamento"]
-        EXE["<b>Execution Service</b><br/>fila, diagnóstico, reparo"]
+    subgraph eks["Kubernetes"]
+        OS["<b>OS Service</b><br/>ordens, cadastros e<br/>orquestrador da Saga"]
+        BIL["<b>Billing Service</b><br/>orçamento, aprovação<br/>e pagamento"]
+        EXE["<b>Execution Service</b><br/>fila, diagnóstico<br/>e reparo"]
     end
 
     OSDB[("Postgres<br/>do OS")]
     BILDB[("Postgres<br/>do Billing")]
     EXEDB[("DynamoDB<br/>do Execution")]
-
-    subgraph msg["Mensageria — SNS FIFO e SQS FIFO"]
-        ECQ[["execution-commands"]]
-        BCQ[["billing-commands"]]
-        ET(["execution-events"])
-        BT(["billing-events"])
-        RQ[["os-saga-replies"]]
-    end
-
+    MSG[["SQS FIFO e SNS FIFO<br/>comandos e eventos da Saga"]]
+    MP(["Mercado Pago"])
     NR["New Relic<br/>APM · logs · métricas"]
 
-    CLI --> GW
-    ADM --> GW
-    MEC --> GW
-    MP --> GW
+    USR --> GW
+    GW -->|POST /auth| LAM
     GW -->|VPC Link| ALB
+    LAM -.->|confirma o CPF| ALB
     ALB --> OS
     ALB --> BIL
     ALB --> EXE
+    EXE -.->|valida itens| ALB
 
     OS --- OSDB
     BIL --- BILDB
     EXE --- EXEDB
 
-    OS -->|comandos| ECQ
-    OS -->|comandos| BCQ
-    ECQ --> EXE
-    BCQ --> BIL
-    EXE -->|eventos| ET
-    BIL -->|eventos| BT
-    ET --> RQ
-    BT --> RQ
-    RQ --> OS
+    OS <--> MSG
+    BIL <--> MSG
+    EXE <--> MSG
 
-    EXE -.->|"valida itens<br/>(REST, síncrono)"| OS
-    BIL <-.->|"cobrança e estorno"| MP
-
-    OS -.-> NR
-    BIL -.-> NR
-    EXE -.-> NR
+    BIL <-.->|"cobrança, estorno<br/>e webhook"| MP
+    eks -.-> NR
 ```
 
 ## Quem é dono de quê
@@ -96,6 +75,42 @@ lê o que precisa, sem nenhum identificador fixo no código.
 | Billing → Mercado Pago | REST síncrono, com confirmação por consulta | o webhook só avisa; o status verdadeiro vem da consulta ao pagamento |
 | Pessoas → serviços | HTTPS pelo Gateway, com JWT | única porta de entrada; as rotas são uma allowlist explícita |
 
+## Por que três serviços e estas tecnologias
+
+### A divisão
+
+O corte segue as três responsabilidades de negócio do enunciado e o dono de cada dado
+([ADR-005](adr/ADR-005-divisao-em-servicos.md)):
+
+| Serviço | Decide sobre | Por que é um serviço próprio |
+|---|---|---|
+| **OS Service** | a ordem de serviço e seu status, os cadastros, o catálogo, o estoque, a autenticação do atendimento e o estado da Saga | a ordem é a entidade em volta da qual tudo gira, e cadastros e estoque mudam com ela, nas mesmas transações locais |
+| **Billing Service** | o orçamento, a aprovação do cliente, a cobrança e o estorno | dinheiro tem regras, prazos e falhas próprios, e o provedor de pagamento fica atrás deste serviço |
+| **Execution Service** | a fila por filial, o diagnóstico e o reparo | é o trabalho da oficina, dirigido pelo mecânico e acessado por chave |
+
+Cortar por camada ou por entidade daria serviços que não decidem nada sozinhos: toda mudança de negócio exigiria deploys
+coordenados, e abrir uma ordem viraria uma sequência de chamadas síncronas. Com o corte por responsabilidade, cada serviço
+tem um motivo para mudar, e o banco próprio é consequência natural.
+
+### As tecnologias
+
+| Escolha | Para quê | Por quê |
+|---|---|---|
+| Quarkus 3.26.3 e Java 17 | os três serviços | a mesma stack da fase anterior, com testes, agente de observabilidade, Dockerfile e regras de arquitetura já validados |
+| PostgreSQL no RDS, uma instância por serviço | OS e Billing | dinheiro e relações pedem transação ACID e constraints ([ADR-011](adr/ADR-011-bancos-sql-e-nosql.md)) |
+| DynamoDB | Execution | o acesso é sempre por chave, sem junção ([ADR-009](adr/ADR-009-tabela-unica-do-execution.md), [ADR-011](adr/ADR-011-bancos-sql-e-nosql.md)) |
+| Saga orquestrada, em código | coordenar o fluxo da ordem de serviço | compensações com ordem, prazos com dono e o fluxo completo testável no pull request ([ADR-001](adr/ADR-001-saga-orquestrada.md)) |
+| SNS FIFO e SQS FIFO, com outbox | comandos e eventos da Saga | ordem por ordem de serviço, retentativa e descarte nativos e custo próximo de zero; Kafka e RabbitMQ não cabem no orçamento nem no cluster do laboratório ([ADR-006](adr/ADR-006-mensageria.md)) |
+| REST síncrono | validação dos itens pelo mecânico e chamadas ao Mercado Pago | só onde uma pessoa espera a resposta ou o provedor exige ([catálogo §6](catalogo-de-mensagens.md)) |
+| Mercado Pago, Checkout Pro | pagamento | o cliente paga numa página do provedor, e o status vem sempre da consulta ao pagamento ([ADR-008](adr/ADR-008-pagamento-mercado-pago.md)) |
+| API Gateway, VPC Link e ALB interno | entrada única | nenhum balanceador público, rotas em allowlist e URL estável para o webhook ([ADR-003](adr/ADR-003-borda-privada.md), [ADR-004](adr/ADR-004-gateway-persistente.md)) |
+| Lambda em Node.js | autenticação por CPF | herdada da fase anterior; agora consulta o OS por um endpoint interno, nunca o banco ([ADR-007](adr/ADR-007-lambda-sem-banco-do-os.md)) |
+| EKS, Terraform e GitHub Actions | execução, infraestrutura e entrega | um pipeline independente por serviço até o Kubernetes, com a infraestrutura versionada |
+| New Relic | observabilidade | reaproveitada da fase anterior e estendida para seguir uma ordem pelos três serviços ([ADR-010](adr/ADR-010-rastreamento-distribuido.md)) |
+| SonarCloud, JaCoCo e Cucumber | qualidade | gate de cobertura de 80% e o fluxo completo em BDD como checks do pull request |
+
+As restrições do laboratório que moldam estas escolhas estão em [Lab × Produção](lab-vs-producao.md).
+
 ## Observabilidade
 
 Uma entidade de APM **por serviço**, com o agente embutido na imagem. Os logs saem em JSON com `correlationId`,
@@ -116,7 +131,7 @@ publicados pelos scripts de `scripts/`. O painel filtra por filial nas páginas 
 DLQ, API e infraestrutura mostram os 3 serviços. Os pagamentos são contados pela linha `<evento> published for Work Order`
 do Billing, e um teste fixa esse texto.
 
-## O que ainda não existe
+## Limites conhecidos
 
 Os componentes deste diagrama já rodaram juntos no EKS ([execuções de 2026-11-05](matriz-de-compensacao.md#execução-no-eks)).
 A observabilidade distribuída foi provada lá em 2026-11-06 e 2026-11-07 ([ADR-010](adr/ADR-010-rastreamento-distribuido.md)):

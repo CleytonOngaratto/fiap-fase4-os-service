@@ -1,8 +1,11 @@
 # ADR-009 — Uma tabela só no DynamoDB para o Execution Service, com a outbox dentro da transação
 
-- **Status:** aceita
-- **Data:** 2026-10-30
-- **Contexto do bloco:** Execution Service (fila de diagnóstico e reparo por filial)
+> Escrito em 2026-10-30, com o spike de 2026-09-29 e os testes do Execution Service.
+
+- **Status:** Aceita (2026-10-30) · executada no EKS em 2026-10-31
+- **Decisores:** dono do projeto, com análise e medições do assistente de IA
+- **Relacionados:** [banco-de-dados.md](../banco-de-dados.md) · [ADR-011 — bancos](ADR-011-bancos-sql-e-nosql.md) ·
+  [catálogo de mensagens](../catalogo-de-mensagens.md)
 
 ## Contexto
 
@@ -37,7 +40,7 @@ Dois índices secundários globais:
 Concorrência por **escrita condicional no status e na versão** lidos, com leitura forte. A inbox condiciona em
 `attribute_not_exists` na própria chave.
 
-## Alternativas descartadas
+## Alternativas consideradas
 
 **Uma tabela por agregado** (estado, histórico, inbox, outbox separadas). É o desenho que um olhar relacional
 sugere, e foi descartado pelo motivo que mais importa aqui: o `TransactWriteItems` do DynamoDB atravessa
@@ -72,12 +75,19 @@ velha. O `Put` do item inteiro torna esse esquecimento impossível.
   o `messageId` do evento de resposta é derivado do comando, e não aleatório. A janela de deduplicação do SNS
   FIFO ajuda, mas não basta: ela expira em 5 minutos.
 - **Partição única no índice de pendências.** Adequada ao volume do projeto, concentra escrita numa partição
-  numa carga real. Registrado em "Lab × Produção": a chave passaria a ser fragmentada.
+  numa carga real. Registrado em [Lab × Produção](../lab-vs-producao.md): a chave passaria a ser fragmentada.
 - **Modelo menos legível para quem vem do relacional.** Mitigação: o desenho das chaves está em
   [banco-de-dados.md](../banco-de-dados.md) e os nomes dos atributos vivem num único lugar no código.
 - **O teste de integração cria a tabela por código.** Se ele e o `terraform/dynamodb.tf` divergirem, o teste
   passa contra um esquema que a nuvem não tem. Mitigação: o recurso de teste traz um comentário dizendo isso, e
   a sessão na AWS exercita a tabela de verdade.
+
+## Em produção, o que poderia mudar
+
+Com carga real, a chave de `gsi-outbox-pending` seria fragmentada (`OUTBOX#<shard>`), para não concentrar a escrita numa
+partição. A tabela ganharia backup contínuo, e uma role só do Execution restringiria o acesso a ela
+([ADR-002](ADR-002-credencial-dos-pods.md)). O desenho continuaria o mesmo: uma partição por ordem de serviço, com estado,
+histórico, inbox e outbox na mesma transação.
 
 ## Evidências
 
@@ -86,3 +96,4 @@ velha. O `Put` do item inteiro torna esse esquecimento impossível.
 | 2026-09-29 | Spike na conta do laboratório: `TransactWriteItems` com estado + outbox, e a transação com condição falsa **cancelada inteira** — o item de outbox dela não existe |
 | 2026-10-30 | `./mvnw clean verify` do Execution com 137 testes verdes e cobertura de linha 99,2%; *round-trip* do item `STATE` tocando os 14 campos |
 | 2026-10-30 | Teste de integração com DynamoDB Local e ElasticMQ: a mesma mensagem duas vezes deixa 1 item de estado, 1 de inbox e **1** de outbox; `CancelDiagnosis` sem item nenhum escreve a resposta; a fila por filial volta ordenada por `enqueuedAt` |
+| 2026-10-31 | No EKS, na tabela real: `CancelDiagnosis` respondido com e sem diagnóstico começado; fila de duas filiais intercaladas na ordem de `enqueuedAt`; item cancelado fora da fila e consultável por `CANCELED`; mensagem duplicada entregue pelo SQS e absorvida pela inbox, com 2 inbox, 1 outbox e 2 passos |

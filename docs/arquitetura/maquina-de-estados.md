@@ -1,6 +1,6 @@
 # Máquina de estados da Ordem de Serviço — v2 (Fase 4)
 
-> Escrito no B0 (2026-10-01), revisado pelo dono em 2026-10-05.
+> Escrito em 2026-10-01, revisado pelo dono em 2026-10-05.
 > Complementa o [catálogo de eventos v1](catalogo-de-mensagens.md), a
 > [matriz de compensação](matriz-de-compensacao.md) e o [ADR da Saga](adr/ADR-001-saga-orquestrada.md).
 

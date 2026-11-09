@@ -1,6 +1,6 @@
 # Catálogo de mensagens — v1 (Fase 4)
 
-> Escrito no B0 (2026-10-01), revisado pelo dono em 2026-10-05.
+> Escrito em 2026-10-01, revisado pelo dono em 2026-10-05.
 > Estados citados aqui: [máquina de estados v2](maquina-de-estados.md).
 
 A saga é **orquestrada** pelo OS Service. Por isso existem dois tipos de mensagem, com nomes e canais

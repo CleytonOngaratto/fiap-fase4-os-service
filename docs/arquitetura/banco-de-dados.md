@@ -1,14 +1,14 @@
 # Banco de dados — os dois Postgres e o DynamoDB
 
-> Escrito no bloco do domínio do OS Service; a seção do Billing entrou no bloco dele. Os estados que
+> Escrito em 2026-10-23, com as seções do Billing e do Execution acrescentadas em 2026-10-25 e 2026-10-30. Os estados que
 > estas tabelas guardam estão na
 > [máquina de estados](maquina-de-estados.md); as mensagens que saem e entram, no
-> [catálogo de mensagens](catalogo-de-mensagens.md).
-> A tabela do Execution ganha sua seção no bloco dele.
+> [catálogo de mensagens](catalogo-de-mensagens.md). O porquê de SQL em dois serviços e NoSQL no terceiro está no
+> [ADR-011](adr/ADR-011-bancos-sql-e-nosql.md).
 
 Cada serviço tem **banco próprio** e ninguém lê o banco do outro: o que atravessa a fronteira é mensagem ou
-chamada de API. Este documento descreve os dois bancos relacionais da fase, o do OS Service e o do Billing
-Service: os dois guardam **estado de processo** além de estado de negócio, porque os dois participam da saga.
+chamada de API. Este documento descreve os três: os dois Postgres, do OS Service e do Billing Service, e o DynamoDB do
+Execution Service. Os três guardam **estado de processo** além de estado de negócio, porque os três participam da saga.
 
 ## Visão geral
 
@@ -20,31 +20,21 @@ erDiagram
     work_orders ||--o{ work_order_parts : "snapshot de pecas"
     work_orders ||--o{ work_order_status_history : "cada transicao"
     work_orders ||--|| saga_instance : "uma saga por OS"
-    parts_and_supply {
-        int4 quantity
-        int4 reserved_quantity
-    }
-    saga_outbox {
-        uuid message_id
-        varchar destination
-        timestamptz sent_at
-    }
-    saga_inbox {
-        uuid message_id
-        timestamptz processed_at
-    }
 ```
+
+`parts_and_supply`, `saga_outbox` e `saga_inbox` não têm relação direta no modelo: estão na tabela abaixo e detalhadas nas
+próximas seções.
 
 | Tabela | Papel | Migration |
 |---|---|---|
-| `customers`, `vehicles`, `auto_service`, `parts_and_supply`, `users` | cadastros e catálogo, herdados da fase anterior | V1–V4 |
+| `customers`, `vehicles`, `auto_service`, `parts_and_supply`, `users` | cadastros e catálogo, herdados da fase anterior | V1–V4; `reserved_quantity` na **V8** |
 | `work_orders` | a ordem de serviço: estado visível ao cliente | V1, V4, **V6** |
 | `work_order_services`, `work_order_parts` | **snapshot precificado** dos itens do diagnóstico | V1, V4 |
 | `branches` | filiais onde uma OS pode ser aberta | **V6** |
 | `work_order_status_history` | toda transição de status, com motivo e saga | **V6** |
 | `saga_instance` | estado do processo distribuído, uma linha por OS | **V7** |
 | `saga_inbox` | mensagens já processadas (idempotência) | **V7** |
-| `saga_outbox` | mensagens a publicar, gravadas na transação do estado | V5, **V7** |
+| `saga_outbox` | mensagens a publicar, gravadas na transação do estado | V5, **V7**, **V9** |
 
 ## Estado de negócio × estado de processo
 
@@ -102,6 +92,7 @@ evento fantasma. A linha do outbox é gravada **na mesma transação** do estado
 | `destination` | para qual participante o comando vai (`EXECUTION`, `BILLING`) |
 | `sent_at` | nulo = pendente. O relay reivindica os pendentes com `FOR UPDATE SKIP LOCKED`, para várias réplicas drenarem sem publicar duas vezes |
 | `branch_id`, `correlation_id`, `causation_id` | campos do envelope que precisam sobreviver ao salto pela tabela |
+| `trace_context` | contexto de rastreamento do passo que gravou a mensagem, que o relay só copia ([ADR-010](adr/ADR-010-rastreamento-distribuido.md)). Entrou na V9 aqui e na V3 do Billing |
 
 A coluna `destination` existe por um motivo de desenho, não de informação: a consulta do relay filtra pelos
 destinos **que têm fila configurada**. Sem esse filtro, um comando sem destino configurado ocuparia as vagas do
@@ -267,7 +258,7 @@ da fila porque mudou de partição, e continua consultável por `CANCELED` ou `R
 **`gsi-outbox-pending`** — partição constante `PENDING`, ordenação `occurredAt`. Existe porque o relay precisa
 achar pendências **de todas as ordens**, e sem índice isso seria uma varredura da tabela. Ao marcar `sentAt`, o
 relay **remove** as duas chaves e o item sai do índice. Partição única é adequada ao volume do projeto e está
-registrada em "Lab × Produção": numa conta real a chave seria fragmentada (`OUTBOX#<shard>`) para não
+registrada em [Lab × Produção](lab-vs-producao.md): numa conta real a chave seria fragmentada (`OUTBOX#<shard>`) para não
 concentrar escrita numa partição.
 
 **Concorrência sem `SELECT ... FOR UPDATE`.** Cada transição condiciona a escrita ao **status e à versão** que a

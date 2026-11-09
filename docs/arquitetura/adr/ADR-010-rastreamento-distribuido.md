@@ -1,12 +1,15 @@
 # ADR-010 — Rastreamento distribuído pela mensageria, com o contexto guardado no outbox
 
-- **Status:** aceita (a travessia pelo SNS ainda será medida no EKS)
-- **Data:** 2026-11-06
-- **Contexto do bloco:** B8, observabilidade distribuída (decisão G53)
+> Escrito em 2026-11-06, com o spike local de 2026-11-05 e as sessões no EKS de 2026-11-06 e 2026-11-07.
+
+- **Status:** Aceita (2026-11-05) · a travessia pelo SNS foi medida no EKS em 2026-11-06, e o traço que sai do webhook, em 2026-11-07
+- **Decisores:** dono do projeto, com análise e medições do assistente de IA
+- **Relacionados:** [componentes.md](../componentes.md#observabilidade) · [ADR-006 — mensageria](ADR-006-mensageria.md) ·
+  [catálogo de mensagens §2](../catalogo-de-mensagens.md)
 
 ## Contexto
 
-O edital pede que se siga uma ordem de serviço pelos três serviços. No fim do B7, o New Relic não conseguia:
+O edital pede que se siga uma ordem de serviço pelos três serviços. Depois da execução da saga no EKS, em 2026-11-05, o New Relic não conseguia:
 
 - **0 de 72 traços** com mensagens e chamadas web passavam de um serviço. Pelo HTTP o traço já atravessava, no
   Execution chamando o catálogo do OS. Pela mensageria, não.
@@ -26,7 +29,7 @@ a OS.
 
 1. **Gravar.** O gateway do outbox pede o contexto da transação atual ao agente e o guarda com o evento: coluna
    `trace_context` (`text`) no OS e no Billing, atributo `traceContext` no item `OUTBOX#` do Execution. É `text`,
-   não `varchar`, porque estourar o tamanho reverteria o passo da saga. Nada muda no orquestrador (G8).
+   não `varchar`, porque estourar o tamanho reverteria o passo da saga. Nada muda no orquestrador ([ADR-001](ADR-001-saga-orquestrada.md)).
 2. **Enviar.** O relay copia os 3 cabeçalhos (`newrelic`, `traceparent`, `tracestate`) para os atributos da
    mensagem. Só vai atributo com valor, e contexto corrompido sai sem atributo. O agente não sobrescreve um atributo
    que já existe, então o contexto guardado vence o do relay.

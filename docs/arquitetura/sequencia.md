@@ -15,49 +15,49 @@ Como ler os diagramas:
 O reparo concluído é o **pivô**: dali em diante nada se desfaz, e o cancelamento recebe **409**.
 
 ```mermaid
+%%{init: {"sequence": {"actorMargin": 20}}}%%
 sequenceDiagram
-    actor A as Atendimento
-    actor M as Mecânico
+    actor F as Atendimento<br/>e mecânico
     actor C as Cliente
-    participant OS as OS (orquestrador)
+    participant OS as OS<br/>(orquestrador)
     participant E as Execution
     participant B as Billing
-    participant MP as Mercado Pago
+    participant MP as Mercado<br/>Pago
 
-    A->>OS: POST /work-orders
-    Note over OS: saga AWAITING_DIAGNOSIS · OS RECEIVED
+    F->>OS: abre a OS
+    Note over OS,E: AWAITING_DIAGNOSIS<br/>OS RECEIVED
     OS-)E: StartDiagnosis
-    M->>E: POST /work-orders/{id}/diagnosis/start
+    F->>E: inicia o diagnóstico
     E-)OS: DiagnosisStarted
-    Note over OS: DIAGNOSING · OS UNDER_DIAGNOSIS
-    M->>E: POST /work-orders/{id}/diagnosis/complete
-    E->>OS: POST /internal/catalog/validate
+    Note over OS,E: DIAGNOSING<br/>OS UNDER_DIAGNOSIS
+    F->>E: conclui o diagnóstico
+    E->>OS: valida os itens
     E-)OS: DiagnosisCompleted
-    Note over OS: AWAITING_BUDGET · preço congelado
+    Note over OS,E: AWAITING_BUDGET<br/>preço congelado
     OS-)B: CreateBudget
     B-)OS: BudgetCreated
-    Note over OS: AWAITING_APPROVAL · OS PENDING_APPROVAL · prazo aberto
-    C->>B: POST /budgets/{id}/approve (202)
+    Note over OS,E: AWAITING_APPROVAL<br/>OS PENDING_APPROVAL<br/>prazo aberto
+    C->>B: aprova (202)
     B-)OS: BudgetApproved
-    Note over OS: reserva as peças · AWAITING_PAYMENT_LINK · OS AWAITING_PAYMENT
+    Note over OS,E: reserva as peças<br/>AWAITING_PAYMENT_LINK<br/>OS AWAITING_PAYMENT
     OS-)B: RequestPayment
-    B->>MP: cria a preferência do Checkout Pro
+    B->>MP: cria a preferência
     B-)OS: PaymentRequested
-    Note over OS: AWAITING_PAYMENT · prazo aberto
-    C->>MP: paga pelo link de GET /budgets
+    Note over OS,E: AWAITING_PAYMENT<br/>prazo aberto
+    C->>MP: paga pelo link
     MP->>B: webhook assinado
-    B->>MP: GET /v1/payments/{id}
+    B->>MP: confere o pagamento
     B-)OS: PaymentConfirmed
-    Note over OS: baixa as peças · AWAITING_REPAIR · OS IN_PROGRESS
+    Note over OS,E: baixa as peças<br/>AWAITING_REPAIR<br/>OS IN_PROGRESS
     OS-)E: StartRepair
-    M->>E: POST /work-orders/{id}/repair/start
+    F->>E: inicia o reparo
     E-)OS: RepairStarted
-    Note over OS: REPAIRING
-    M->>E: POST /work-orders/{id}/repair/complete
+    Note over OS,E: REPAIRING
+    F->>E: conclui o reparo
     E-)OS: RepairCompleted
-    Note over OS: COMPLETED · OS COMPLETED (pivô)
-    A->>OS: PATCH /work-orders/{id}/deliver
-    Note over OS: OS DELIVERED
+    Note over OS,E: COMPLETED<br/>OS COMPLETED (pivô)
+    F->>OS: entrega o veículo
+    Note over OS,E: OS DELIVERED
 ```
 
 ## Compensação depois do pagamento (F6)
@@ -69,21 +69,21 @@ com o dinheiro ainda retido.
 sequenceDiagram
     actor M as Mecânico
     participant E as Execution
-    participant OS as OS (orquestrador)
+    participant OS as OS<br/>(orquestrador)
     participant B as Billing
-    participant MP as Mercado Pago
+    participant MP as Mercado<br/>Pago
 
-    M->>E: POST /work-orders/{id}/repair/fail
+    M->>E: registra a falha
     E-)OS: RepairFailed
-    Note over OS: na mesma transação: saga COMPENSATING,<br/>peças devolvidas ao estoque e os 3 comandos na outbox
+    Note over OS: saga COMPENSATING<br/>peças devolvidas<br/>3 comandos na outbox<br/>(mesma transação)
     OS-)B: RefundPayment
     OS-)B: CancelBudget
     OS-)E: CancelDiagnosis
-    B->>MP: estorno com a chave de idempotência do pagamento
+    B->>MP: estorno idempotente
     B-)OS: PaymentRefunded
     B-)OS: BudgetCanceled
     E-)OS: DiagnosisCanceled
-    Note over OS: última confirmação: saga COMPENSATED ·<br/>OS CANCELED (REPAIR_FAILED)
+    Note over OS: saga COMPENSATED<br/>OS CANCELED<br/>(REPAIR_FAILED)
 ```
 
 **Se o estorno for recusado (F8):** o Billing não responde, a mensagem esgota as tentativas e vai para a

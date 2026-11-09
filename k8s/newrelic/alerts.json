@@ -4,7 +4,7 @@
   "conditions": [
     {
       "name": "Falha no processamento de OS",
-      "description": "Resposta 5xx em qualquer um dos 3 serviços, lida de Transaction: a métrica do Prometheus perde a primeira amostra de cada série e não disparou em nenhum dos 3 erros da B7b. As rotas /q/ ficam de fora, porque o healthcheck falha em todo destroy. Uma ocorrência basta. Comece pelo log do serviço no mesmo minuto.",
+      "description": "Resposta 5xx em qualquer um dos 3 serviços, lida de Transaction: a métrica do Prometheus perde a primeira amostra de cada série e não disparou em nenhum dos 3 erros da execução no EKS de 2026-11-05. As rotas /q/ ficam de fora, porque o healthcheck falha em todo destroy. Uma ocorrência basta. Comece pelo log do serviço no mesmo minuto.",
       "nrql": "SELECT filter(count(*), WHERE http.statusCode >= 500 AND request.uri NOT LIKE '%/q/%') FROM Transaction WHERE appName IN ('car-workshop-api', 'billing-service', 'execution-service') FACET appName",
       "aggregationMethod": "EVENT_FLOW",
       "aggregationDelaySeconds": 120,

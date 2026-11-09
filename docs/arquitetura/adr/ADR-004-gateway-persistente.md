@@ -1,10 +1,10 @@
-# ADR — API Gateway persistente: a URL pública não muda entre sessões
+# ADR-004 — API Gateway persistente: a URL pública não muda entre sessões
 
 > Escrito em 2026-10-12, com as medições feitas no AWS Academy em 2026-10-01 e a leitura da documentação do Mercado
 > Pago de 2026-09-29; confirmado na primeira sessão com os três serviços, em 2026-10-14.
 
 - **Status:** Aceita (2026-10-01)
-- **Decisores:** dono do projeto, com análise e medições do agente
+- **Decisores:** dono do projeto, com análise e medições do assistente de IA
 - **Relacionados:** [ADR-003 — borda privada](ADR-003-borda-privada.md) ·
   [catálogo de mensagens §6](../catalogo-de-mensagens.md) (chamadas síncronas) ·
   [borda (fiap-fase4-auth-serverless)](https://github.com/CleytonOngaratto/fiap-fase4-auth-serverless)
