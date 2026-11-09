@@ -1,9 +1,9 @@
-# ADR — Borda privada: API Gateway → VPC Link → ALB interno → pods
+# ADR-003 — Borda privada: API Gateway → VPC Link → ALB interno → pods
 
 > Escrito em 2026-10-10, com as medições feitas no AWS Academy em 2026-10-01 e confirmado na plataforma real em 2026-10-11.
 
 - **Status:** Aceita (2026-10-01)
-- **Decisores:** dono do projeto, com análise e medições do agente
+- **Decisores:** dono do projeto, com análise e medições do assistente de IA
 - **Relacionados:** [ADR-002 — credencial dos pods](ADR-002-credencial-dos-pods.md) ·
   [catálogo de mensagens §6](../catalogo-de-mensagens.md) (chamadas síncronas) ·
   [plataforma (fiap-fase4-infra-k8s)](https://github.com/CleytonOngaratto/fiap-fase4-infra-k8s)

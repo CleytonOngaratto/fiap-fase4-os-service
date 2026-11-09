@@ -1,10 +1,9 @@
-# ADR — por onde o monolito foi cortado em três serviços
+# ADR-005 — Por onde o monolito foi cortado em três serviços
 
-> Escrito em 2026-10-18, no bloco do esqueleto andante, a partir da leitura do monolito da Fase 3 e do escopo
-> exigido no Tech Challenge.
+> Escrito em 2026-10-18, a partir da leitura do monolito da Fase 3 e do escopo exigido no Tech Challenge.
 
 - **Status:** Aceita (2026-09-24)
-- **Decisores:** dono do projeto, com análise do agente
+- **Decisores:** dono do projeto, com análise do assistente de IA
 - **Relacionados:** [componentes.md](../componentes.md) · [ADR-001 — Saga orquestrada](ADR-001-saga-orquestrada.md) ·
   [catálogo de mensagens](../catalogo-de-mensagens.md) · [máquina de estados](../maquina-de-estados.md)
 
@@ -91,4 +90,4 @@ código. O registro dessa limitação está no [ADR-002](ADR-002-credencial-dos-
 | 2026-09-24 | Leitura do monolito da Fase 3: o diagnóstico e a geração do orçamento aconteciam **na mesma chamada**, e a baixa de estoque na mesma transação da aprovação — os dois pontos que o corte separa em etapas ligadas por evento |
 | 2026-10-01 | [catálogo de mensagens §6](../catalogo-de-mensagens.md): cada chamada síncrona que sobrou, com o motivo explícito e as proteções |
 | 2026-10-14 | Os três serviços subiram pelo **próprio pipeline** e responderam **pelo Gateway**, cada um no seu *namespace*, com os segredos de cada um visíveis apenas no *namespace* dele |
-| 2026-10-18 | O primeiro fluxo que atravessa a fronteira sem banco compartilhado: abrir uma ordem grava o comando no outbox do OS, o Execution o consome e responde com um evento, e o OS avança o status — provado em teste automatizado com fila real ([`SagaMessagingIntegrationTest`](https://github.com/CleytonOngaratto/fiap-fase4-os-service/blob/main/src/test/java/br/com/fiap/postech/carworkshop/workorder/infrastructure/messaging/SagaMessagingIntegrationTest.java)) |
+| 2026-10-18 | O primeiro fluxo que atravessa a fronteira sem banco compartilhado: abrir uma ordem grava o comando no outbox do OS, o Execution o consome e responde com um evento, e o OS avança o status — provado em teste automatizado com fila real ([`SagaMessagingIntegrationTest`](https://github.com/CleytonOngaratto/fiap-fase4-os-service/blob/main/src/test/java/br/com/fiap/postech/carworkshop/saga/infrastructure/messaging/SagaMessagingIntegrationTest.java)) |

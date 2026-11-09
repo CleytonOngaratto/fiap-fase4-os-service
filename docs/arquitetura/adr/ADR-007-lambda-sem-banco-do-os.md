@@ -1,7 +1,9 @@
-# ADR — A Lambda de autenticação não acessa o banco do OS Service
+# ADR-007 — A Lambda de autenticação não acessa o banco do OS Service
 
-- **Status:** Aceita (2026-09-29, implementada no bloco do domínio do OS Service)
-- **Decisores:** dono do projeto, com análise e medições do agente
+> Escrito em 2026-10-23, com o spike de rotas do Gateway de 2026-10-01 e os testes de 2026-10-22.
+
+- **Status:** Aceita (2026-09-29) · implementada em 2026-10-22
+- **Decisores:** dono do projeto, com análise e medições do assistente de IA
 - **Relacionados:** [componentes.md](../componentes.md) · [catálogo de mensagens §6](../catalogo-de-mensagens.md) ·
   [ADR-003 — borda privada](ADR-003-borda-privada.md) · [banco-de-dados.md](../banco-de-dados.md)
 

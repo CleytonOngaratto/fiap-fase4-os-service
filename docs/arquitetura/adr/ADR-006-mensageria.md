@@ -1,10 +1,9 @@
-# ADR — mensageria: SNS FIFO publicando em SQS FIFO, com outbox transacional
+# ADR-006 — Mensageria: SNS FIFO publicando em SQS FIFO, com outbox transacional
 
-> Escrito em 2026-10-18, no bloco do esqueleto andante, com as medições na nuvem de 2026-09-29 e os testes
-> automatizados com fila real do mesmo bloco.
+> Escrito em 2026-10-18, com as medições na nuvem de 2026-09-29 e os testes automatizados com fila real da mesma data.
 
 - **Status:** Aceita (2026-09-29)
-- **Decisores:** dono do projeto, com análise e medições do agente
+- **Decisores:** dono do projeto, com análise e medições do assistente de IA
 - **Relacionados:** [ADR-001 — Saga orquestrada](ADR-001-saga-orquestrada.md) ·
   [ADR-005 — divisão em serviços](ADR-005-divisao-em-servicos.md) ·
   [catálogo de mensagens](../catalogo-de-mensagens.md) ·
@@ -84,7 +83,7 @@ Dois detalhes que o desenho exige e que não são opcionais:
   (`batch-size=1`), ao custo de vazão.
 - **Idempotência é obrigação do consumidor**, não um presente da fila.
 - **Limite de dez atributos por mensagem.** O envelope usa quatro; os de rastreamento distribuído somam mais
-  três, guardados no outbox desde o B8 ([ADR-010](ADR-010-rastreamento-distribuido.md)) e medidos no fio: 7. Fica
+  três, guardados no outbox ([ADR-010](ADR-010-rastreamento-distribuido.md)) e medidos no fio: 7. Fica
   pouca folga, e isso é registrado para quando a observabilidade distribuída crescer.
 - **O relay é mais uma peça para operar:** se ele parar, nada é publicado, embora nada se perca. A fila de
   pendentes do outbox é um sinal direto disso.
@@ -106,9 +105,9 @@ para aumentar o paralelismo sem perder a ordem por ordem de serviço.
 | 2026-09-29 | Descarte provado: com poucas tentativas configuradas, mensagens recebidas e não apagadas foram para a fila de descarte **na ordem**, e a fila principal ficou vazia |
 | 2026-10-11 | Uma aplicação **sem nenhuma credencial configurada** publicou no tópico FIFO e a mensagem chegou crua na fila assinada — a identidade vem do nó (ver [ADR-002](ADR-002-credencial-dos-pods.md)) |
 | 2026-10-18 | Infraestrutura das filas em código: [`terraform/sqs.tf` do Execution](https://github.com/CleytonOngaratto/fiap-fase4-execution-service/blob/main/terraform/sqs.tf) (fila de comandos e descarte) e [`terraform/sqs.tf` do OS](https://github.com/CleytonOngaratto/fiap-fase4-os-service/blob/main/terraform/sqs.tf) (fila de respostas, política que libera **apenas** os dois tópicos e as assinaturas com *raw delivery*) |
-| 2026-10-18 | Outbox atômico: a linha do outbox só é gravada **dentro** da transação da abertura — o adaptador exige transação ativa e falha alto sem ela, provado em [`SagaOutboxGatewayTest`](https://github.com/CleytonOngaratto/fiap-fase4-os-service/blob/main/src/test/java/br/com/fiap/postech/carworkshop/workorder/adapter/gateway/SagaOutboxGatewayTest.java) |
-| 2026-10-18 | Caminho completo em teste automatizado contra fila real (emulador compatível com a API de filas): abrir a ordem grava o comando com o identificador de correlação da requisição, o relay o publica com os quatro atributos do envelope e marca a linha como enviada, e a resposta do participante avança o status. A **mesma resposta entregue duas vezes** avança o status uma vez só e não deixa nada para o descarte ([`SagaMessagingIntegrationTest`](https://github.com/CleytonOngaratto/fiap-fase4-os-service/blob/main/src/test/java/br/com/fiap/postech/carworkshop/workorder/infrastructure/messaging/SagaMessagingIntegrationTest.java)) |
-| 2026-10-18 | Deduplicação determinística do lado do participante: o mesmo comando reentregue produz o **mesmo** identificador de evento, provado em [`DiagnosisStartedEventTest`](https://github.com/CleytonOngaratto/fiap-fase4-execution-service/blob/main/src/test/java/br/com/fiap/postech/carworkshop/execution/domain/message/DiagnosisStartedEventTest.java) e no consumidor com fila real |
+| 2026-10-18 | Outbox atômico: a linha do outbox só é gravada **dentro** da transação da abertura — o adaptador exige transação ativa e falha alto sem ela, provado em [`SagaOutboxGatewayTest`](https://github.com/CleytonOngaratto/fiap-fase4-os-service/blob/main/src/test/java/br/com/fiap/postech/carworkshop/saga/adapter/gateway/SagaOutboxGatewayTest.java) |
+| 2026-10-18 | Caminho completo em teste automatizado contra fila real (emulador compatível com a API de filas): abrir a ordem grava o comando com o identificador de correlação da requisição, o relay o publica com os quatro atributos do envelope e marca a linha como enviada, e a resposta do participante avança o status. A **mesma resposta entregue duas vezes** avança o status uma vez só e não deixa nada para o descarte ([`SagaMessagingIntegrationTest`](https://github.com/CleytonOngaratto/fiap-fase4-os-service/blob/main/src/test/java/br/com/fiap/postech/carworkshop/saga/infrastructure/messaging/SagaMessagingIntegrationTest.java)) |
+| 2026-10-18 | Deduplicação determinística do lado do participante: o mesmo comando reentregue produz o **mesmo** identificador de evento, provado em [`DiagnosisStartedEventTest`](https://github.com/CleytonOngaratto/fiap-fase4-execution-service/blob/36541c91b3ee9ce79dd3e48171b60c3956771e36/src/test/java/br/com/fiap/postech/carworkshop/execution/domain/message/DiagnosisStartedEventTest.java) e no consumidor com fila real |
 | 2026-10-19 | **Na nuvem, com filas de verdade:** as duas filas nasceram FIFO, com deduplicação por identificador (nunca por conteúdo), *visibility* de 30 s, *long polling* de 20 s e descarte depois de 3 tentativas. As duas assinaturas dos tópicos entregam **sem o envelope do serviço de notificação** (*raw delivery*), e a política da fila de respostas libera **apenas** o serviço de notificação, restrito por condição aos **dois** tópicos esperados — nenhum outro tópico ou conta escreve nela |
 | 2026-10-19 | **Caminho completo pela porta pública:** autenticar, abrir uma ordem de serviço com um identificador de correlação e consultá-la — o status passou a "em diagnóstico" em **4 s**, sem nenhum agendador envolvido. A consulta de observabilidade mostra o mesmo identificador de correlação nos **dois** serviços, com o **mesmo identificador de saga** na cadeia inteira e **5,3 s** de ponta a ponta |
 | 2026-10-19 | **A mensagem é o que move o estado, e a fila sustenta o participante fora do ar:** com o participante em zero réplicas, uma ordem nova ficou parada no estado inicial e o comando **esperou na fila**; ao devolver as réplicas, a ordem avançou sozinha. Ao fim das provas, filas principais e de descarte **todas vazias** |

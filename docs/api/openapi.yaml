@@ -1,0 +1,970 @@
+---
+openapi: 3.1.0
+tags:
+- name: Authentication
+- name: Auto Services
+- name: Branches
+- name: Customer Tracking
+- name: Customers
+- name: Internal
+- name: Parts and Supplies
+- name: Vehicles
+- name: Work Orders
+components:
+  schemas:
+    AutoServiceRequest:
+      type: object
+      properties:
+        description:
+          type: string
+        price:
+          type: number
+    CatalogItemRequest:
+      type: object
+      properties:
+        type:
+          type: string
+        catalogId:
+          type: integer
+          format: int64
+        part:
+          type: boolean
+    CatalogValidationRequest:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogItemRequest"
+    CatalogValidationResponse:
+      type: object
+      properties:
+        invalid:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogItemRequest"
+    CustomerRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        document:
+          type: string
+        rg:
+          type: string
+        email:
+          type: string
+        number:
+          type: string
+    LoginRequest:
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+    PartsAndSupplyRequest:
+      type: object
+      properties:
+        code:
+          type: string
+        manufacturer:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+        type:
+          $ref: "#/components/schemas/TypeProductEnum"
+        quantity:
+          type: integer
+          format: int32
+    SignupRequest:
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+    TypeProductEnum:
+      type: string
+      enum:
+      - UNITARY
+      - PACKAGE
+    VehicleRequest:
+      type: object
+      properties:
+        vehiclePlate:
+          type: string
+        manufacturer:
+          type: string
+        modelName:
+          type: string
+        modelYear:
+          type: integer
+          format: int32
+        customerId:
+          type: integer
+          format: int64
+    WorkOrderRequest:
+      type: object
+      properties:
+        customer_id:
+          type: integer
+          format: int64
+        vehicle_id:
+          type: integer
+          format: int64
+        branch_id:
+          type: string
+        complaint:
+          type: string
+  securitySchemes:
+    SecurityScheme:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Authentication
+paths:
+  /carworkshop/v1/auth/login:
+    post:
+      summary: Authenticate and obtain a JWT token
+      tags:
+      - Authentication
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+  /carworkshop/v1/auth/signup:
+    post:
+      summary: "Register an administrator (requires an administrator, except for the\
+        \ first one)"
+      tags:
+      - Authentication
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignupRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad Request
+  /carworkshop/v1/branches:
+    get:
+      summary: List the branches a work order can be opened at
+      tags:
+      - Branches
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+      security:
+      - SecurityScheme:
+        - ADMIN
+  /carworkshop/v1/customers/create:
+    post:
+      summary: Create a new customer
+      tags:
+      - Customers
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomerRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+        "400":
+          description: Bad Request
+      security:
+      - SecurityScheme:
+        - ADMIN
+  /carworkshop/v1/customers/delete/{id}:
+    delete:
+      summary: Delete a customer
+      tags:
+      - Customers
+      parameters:
+      - description: Customer ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+      security:
+      - SecurityScheme:
+        - ADMIN
+  /carworkshop/v1/customers/get-all:
+    get:
+      summary: Find all customers
+      tags:
+      - Customers
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+      security:
+      - SecurityScheme:
+        - ADMIN
+  /carworkshop/v1/customers/get-by-document/{document}:
+    get:
+      summary: Find customer by CPF/CNPJ document
+      tags:
+      - Customers
+      parameters:
+      - description: CPF or CNPJ
+        name: document
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+      security:
+      - SecurityScheme:
+        - ADMIN
+  /carworkshop/v1/customers/get-by-email/{email}:
+    get:
+      summary: Find customer by e-mail
+      tags:
+      - Customers
+      parameters:
+      - description: Customer e-mail
+        name: email
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+      security:
+      - SecurityScheme:
+        - ADMIN
+  /carworkshop/v1/customers/get-by-id/{id}:
+    get:
+      summary: Find customer by ID
+      tags:
+      - Customers
+      parameters:
+      - description: Customer ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+      security:
+      - SecurityScheme:
+        - ADMIN
+  /carworkshop/v1/customers/update/{id}:
+    put:
+      summary: Update customer data
+      tags:
+      - Customers
+      parameters:
+      - description: Customer ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CustomerRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+        "400":
+          description: Bad Request
+      security:
+      - SecurityScheme:
+        - ADMIN
+  /carworkshop/v1/internal/catalog/validate:
+    post:
+      summary: List the diagnosed items the catalog does not know (service to service)
+      tags:
+      - Internal
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CatalogValidationRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CatalogValidationResponse"
+        "400":
+          description: Bad Request
+  /carworkshop/v1/internal/customers/{cpf}:
+    get:
+      summary: "Confirm a CPF belongs to a customer (service to service, outside the\
+        \ public edge)"
+      tags:
+      - Internal
+      parameters:
+      - name: cpf
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+  /carworkshop/v1/parts-and-supplies:
+    get:
+      summary: List all parts and supplies
+      tags:
+      - Parts and Supplies
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+      security:
+      - SecurityScheme:
+        - ADMIN
+    post:
+      summary: Create a new part/supply
+      tags:
+      - Parts and Supplies
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartsAndSupplyRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+        "400":
+          description: Bad Request
+      security:
+      - SecurityScheme:
+        - ADMIN
+  /carworkshop/v1/parts-and-supplies/{id}:
+    put:
+      summary: Update part/supply data
+      tags:
+      - Parts and Supplies
+      parameters:
+      - description: Part ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartsAndSupplyRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+        "400":
+          description: Bad Request
+      security:
+      - SecurityScheme:
+        - ADMIN
+    get:
+      summary: Get part/supply by ID
+      tags:
+      - Parts and Supplies
+      parameters:
+      - description: Part ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+      security:
+      - SecurityScheme:
+        - ADMIN
+    delete:
+      summary: Delete a part/supply
+      tags:
+      - Parts and Supplies
+      parameters:
+      - description: Part ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+      security:
+      - SecurityScheme:
+        - ADMIN
+  /carworkshop/v1/parts-and-supplies/{id}/order:
+    patch:
+      summary: Consume stock for a part/supply
+      tags:
+      - Parts and Supplies
+      parameters:
+      - description: Part ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      - name: quantity
+        in: query
+        schema:
+          type: integer
+          format: int32
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+      security:
+      - SecurityScheme:
+        - ADMIN
+  /carworkshop/v1/service:
+    get:
+      summary: List all auto services
+      tags:
+      - Auto Services
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+      security:
+      - SecurityScheme:
+        - ADMIN
+    post:
+      summary: Create a new auto service
+      tags:
+      - Auto Services
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AutoServiceRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+        "400":
+          description: Bad Request
+      security:
+      - SecurityScheme:
+        - ADMIN
+  /carworkshop/v1/service/{id}:
+    put:
+      summary: Update an auto service
+      tags:
+      - Auto Services
+      parameters:
+      - description: Service ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AutoServiceRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+        "400":
+          description: Bad Request
+      security:
+      - SecurityScheme:
+        - ADMIN
+    get:
+      summary: Get an auto service by ID
+      tags:
+      - Auto Services
+      parameters:
+      - description: Service ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+      security:
+      - SecurityScheme:
+        - ADMIN
+    delete:
+      summary: Delete an auto service
+      tags:
+      - Auto Services
+      parameters:
+      - description: Service ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+      security:
+      - SecurityScheme:
+        - ADMIN
+  /carworkshop/v1/tracking/{id}:
+    get:
+      summary: "Get work order status, details and status history"
+      tags:
+      - Customer Tracking
+      parameters:
+      - description: Work order ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+      security:
+      - SecurityScheme:
+        - CUSTOMER
+        - ADMIN
+  /carworkshop/v1/vehicles/create:
+    post:
+      summary: Create a new vehicle
+      tags:
+      - Vehicles
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VehicleRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+        "400":
+          description: Bad Request
+      security:
+      - SecurityScheme:
+        - ADMIN
+  /carworkshop/v1/vehicles/delete/{id}:
+    delete:
+      summary: Delete a vehicle
+      tags:
+      - Vehicles
+      parameters:
+      - description: Vehicle ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+      security:
+      - SecurityScheme:
+        - ADMIN
+  /carworkshop/v1/vehicles/get-all:
+    get:
+      summary: List all vehicles
+      tags:
+      - Vehicles
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+      security:
+      - SecurityScheme:
+        - ADMIN
+  /carworkshop/v1/vehicles/get-by-id/{id}:
+    get:
+      summary: Get vehicle by ID
+      tags:
+      - Vehicles
+      parameters:
+      - description: Vehicle ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+      security:
+      - SecurityScheme:
+        - ADMIN
+  /carworkshop/v1/vehicles/get-by-plate/{plate}:
+    get:
+      summary: Get vehicle by license plate
+      tags:
+      - Vehicles
+      parameters:
+      - description: License plate
+        name: plate
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+      security:
+      - SecurityScheme:
+        - ADMIN
+  /carworkshop/v1/vehicles/update/{id}:
+    put:
+      summary: Update vehicle data
+      tags:
+      - Vehicles
+      parameters:
+      - description: Vehicle ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VehicleRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+        "400":
+          description: Bad Request
+      security:
+      - SecurityScheme:
+        - ADMIN
+  /carworkshop/v1/work-orders:
+    get:
+      summary: List all work orders (including deleted)
+      tags:
+      - Work Orders
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+      security:
+      - SecurityScheme:
+        - ADMIN
+    post:
+      summary: Open a work order for a customer vehicle at a branch
+      tags:
+      - Work Orders
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkOrderRequest"
+        required: true
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+        "400":
+          description: Bad Request
+      security:
+      - SecurityScheme:
+        - ADMIN
+  /carworkshop/v1/work-orders/active:
+    get:
+      summary: List active work orders ordered by priority
+      tags:
+      - Work Orders
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+      security:
+      - SecurityScheme:
+        - ADMIN
+  /carworkshop/v1/work-orders/stats/average-completion-time:
+    get:
+      summary: Get average completion time in hours
+      tags:
+      - Work Orders
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+      security:
+      - SecurityScheme:
+        - ADMIN
+  /carworkshop/v1/work-orders/{id}:
+    get:
+      summary: Get work order by ID
+      tags:
+      - Work Orders
+      parameters:
+      - description: Work order ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+      security:
+      - SecurityScheme:
+        - ADMIN
+    delete:
+      summary: Soft-delete a completed or delivered work order (logical deletion)
+      tags:
+      - Work Orders
+      parameters:
+      - description: Work order ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+      security:
+      - SecurityScheme:
+        - ADMIN
+  /carworkshop/v1/work-orders/{id}/cancel:
+    post:
+      summary: "Cancel a work order, undoing whatever the saga already did"
+      tags:
+      - Work Orders
+      parameters:
+      - description: Work order ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+      security:
+      - SecurityScheme:
+        - ADMIN
+  /carworkshop/v1/work-orders/{id}/deliver:
+    patch:
+      summary: Mark vehicle as delivered
+      tags:
+      - Work Orders
+      parameters:
+      - description: Work order ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+      security:
+      - SecurityScheme:
+        - ADMIN
+  /carworkshop/v1/work-orders/{id}/history:
+    get:
+      summary: List every status transition of a work order
+      tags:
+      - Work Orders
+      parameters:
+      - description: Work order ID
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          format: int64
+      responses:
+        "200":
+          description: OK
+        "401":
+          description: Not Authorized
+        "403":
+          description: Not Allowed
+      security:
+      - SecurityScheme:
+        - ADMIN
+info:
+  title: Car Workshop API
+  version: 4.0.0
+  description: Gestao de oficina mecanica. O cliente autentica-se por CPF no API Gateway
+    (Lambda) e acompanha suas ordens de servico; as rotas administrativas exigem o
+    papel ADMIN.

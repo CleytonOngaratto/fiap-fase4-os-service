@@ -1,7 +1,9 @@
-# ADR — Pagamento pelo Checkout Pro do Mercado Pago
+# ADR-008 — Pagamento pelo Checkout Pro do Mercado Pago
 
-- **Status:** Aceita (2026-10-25, implementada no bloco do Billing Service)
-- **Decisores:** dono do projeto, com análise e medições do agente
+> Escrito em 2026-10-28, com os testes de 2026-10-25 e as medições na sandbox do Mercado Pago a partir de 2026-10-29.
+
+- **Status:** Aceita (2026-10-25) · implementada no Billing Service
+- **Decisores:** dono do projeto, com análise e medições do assistente de IA
 - **Relacionados:** [catálogo de mensagens §3–4](../catalogo-de-mensagens.md) ·
   [matriz de compensação F4–F8](../matriz-de-compensacao.md) ·
   [máquina de estados §3](../maquina-de-estados.md) ·
@@ -52,7 +54,7 @@ mudança de caminho. O `PaymentCanceled` é publicado para o orquestrador **mesm
 cancelamento**; só falha de transporte (5xx esgotado, timeout) vai para a DLQ. Sem essa regra a saga ficaria
 em `COMPENSATING` para sempre esperando uma confirmação que nunca viria.
 
-**Recusa antes do prazo não vira estorno (G55, 2026-11-05).** O pagamento guarda o id da última tentativa, que pode ser
+**Recusa antes do prazo não vira estorno (2026-11-05).** O pagamento guarda o id da última tentativa, que pode ser
 de uma tentativa `rejected`. Com credencial real, pela documentação do provedor, cancelar esse id responde 2018, e o 2018 levava ao estorno de algo que
 nunca foi pago: o estorno falharia e a mensagem iria para a DLQ, com a saga parada. Agora, diante do 2018, o Billing
 consulta o pagamento no provedor. `rejected` e `cancelled` cancelam localmente, sem estorno, com linha de log própria;
@@ -217,7 +219,7 @@ continuaria o mesmo.
 | 2026-10-29 | Conserto **implantado e confirmado pelo provedor**: a mesma simulação que devolvia 500 passou a responder **200 - OK**, com a mensagem do painel *"Excelente! Enviamos uma notificação Webhook com sucesso"* e o log do pod registrando `refers to a payment the provider does not know: acknowledged`. A simulação do modo de **teste** segue devolvendo 401, corretamente: ela assina com o segredo de teste, e o implantado é o de produção |
 | 2026-10-29 | Estorno **recusado pela sandbox** com 401 `Unauthorized use of live credentials` (pagamento em `live_mode: true`, token de conta `test_user`); `GET` de estornos responde 200 com o mesmo token. A recusa provou a compensação: retentativa → DLQ → saga em `COMPENSATING` com o passo de estorno pendente |
 | 2026-10-29 | **Dois** pagamentos reais confirmados (R$ 257,70 cada), com os ids do provedor gravados em `payments.mp_payment_id`. `payment_attempts` com **1** linha (`cc_rejected_insufficient_amount`), e o outbox dos dois serviços **drenado** (`sent_at is null` = 0) — nenhum evento preso |
-| 2026-11-05 | **Cancelamento depois de recusa (G55):** o `PUT` de cancelamento no pagamento recusado `185673513797`, rodado uma vez pelo dono, respondeu **401** na sandbox, e o `GET` seguiu `rejected`. Billing #10: 6 testes puros dos ramos (`rejected`, `cancelled` e 404 sem estorno; `approved` e `refunded` com estorno na mesma chave; falha de leitura retentada), e os 4 sem estorno falharam antes do conserto |
+| 2026-11-05 | **Cancelamento depois de recusa:** o `PUT` de cancelamento no pagamento recusado `185673513797`, rodado uma vez pelo dono, respondeu **401** na sandbox, e o `GET` seguiu `rejected`. Billing #10: 6 testes puros dos ramos (`rejected`, `cancelled` e 404 sem estorno; `approved` e `refunded` com estorno na mesma chave; falha de leitura retentada), e os 4 sem estorno falharam antes do conserto |
 | 2026-11-07 | **Recusa e prazo no EKS:** tentativa `188245865886` recusada com o cartão `FUND` antes do prazo; vencido o prazo, o cancelamento respondeu **401** e o Billing seguiu (`refused to cancel … compensation continues`), publicou `PaymentCanceled`, e a saga terminou `COMPENSATED` com `PAYMENT_EXPIRED`. Confirma a inferência de 2026-11-05: na sandbox, a recusa comum cancela, e o ramo do 2018 não roda |
 | 2026-11-07 | **Recusa depois da aprovação trocava o id do pagamento.** A preferência do Checkout Pro continua pagável depois de aprovada: a da OS 2 recebeu uma tentativa recusada depois do `PaymentConfirmed`, e `payments.mp_payment_id` passou de `187182401761`, o aprovado, para `187183358981`, a recusa (medido no RDS). Um estorno dessa OS iria para o pagamento errado. Conserto no billing #12: a tentativa só é guardada com o pagamento `PENDING`; fora disso, fica em `payment_attempts`, sem evento. Os 3 testes puros novos falharam antes |
 | 2026-10-29 | **Prazo de pagamento vencido compensou sozinho:** cobrança não paga → *scheduler* do orquestrador estourou o prazo → orçamento e pagamento `CANCELED` com motivo `PAYMENT_EXPIRED`. É o cancelamento *best-effort* desta ADR exercitado no ramo em que o cliente **nunca abriu o link** — o caso comum, e o que não tem API de cancelamento no provedor |

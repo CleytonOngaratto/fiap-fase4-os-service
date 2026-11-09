@@ -1,9 +1,9 @@
-# ADR — Saga orquestrada, com o orquestrador em código no OS Service
+# ADR-001 — Saga orquestrada, com o orquestrador em código no OS Service
 
-> Escrito no B0 (2026-10-01), revisado pelo dono em 2026-10-05.
+> Escrito em 2026-10-01, revisado pelo dono em 2026-10-05.
 
-- **Status:** Aceita (2026-09-29)
-- **Decisores:** dono do projeto, com análise e medições do agente
+- **Status:** Aceita (2026-09-29) · implementada e executada no EKS em 2026-11-05
+- **Decisores:** dono do projeto, com análise e medições do assistente de IA
 - **Relacionados:** [máquina de estados v2](../maquina-de-estados.md) · [catálogo v1](../catalogo-de-mensagens.md) ·
   [matriz de compensação](../matriz-de-compensacao.md)
 
@@ -96,3 +96,5 @@ executa** o orquestrador.
 | 2026-09-29 | Step Functions com a `LabRole`: sucesso e falha → compensação provados (alternativa viável, descartada por escolha) |
 | 2026-09-29 | SNS FIFO → SQS FIFO: ordem por OS, duplicado descartado, *message attributes* intactos, DLQ após `maxReceiveCount` |
 | 2026-09-29 | DynamoDB `TransactWriteItems`: estado + outbox, cancelamento integral quando a condição falha |
+| 2026-11-03 | O orquestrador está no pacote [`saga`](../../../src/main/java/br/com/fiap/postech/carworkshop/saga), isolado por regra própria no ArchUnit. O BDD de componente roda **28 cenários** contra Postgres e filas FIFO reais em contêiner, com os participantes simulados: as [features](../../../src/test/resources/features/saga) têm 21 cenários e 2 esquemas com 8 exemplos, e 1 deles é marcado `@e2e-only` e fica de fora |
+| 2026-11-05 | No EKS, com os três serviços reais: 14 cenários verdes pelo API Gateway, descritos em [Execução no EKS](../matriz-de-compensacao.md#execução-no-eks) |
