@@ -44,6 +44,7 @@ public class PartsAndSupplyController {
     @RolesAllowed("ADMIN")
     @Operation(summary = "Create a new part/supply")
     public Response create(PartsAndSupplyRequest request) {
+        if (request == null) throw new BadRequestException("Request body is required.");
         PartsAndSupplyResponse created = useCase.create(request);
         return Response.status(Response.Status.CREATED).entity(created).build();
     }
@@ -54,6 +55,7 @@ public class PartsAndSupplyController {
     @Operation(summary = "Update part/supply data")
     public Response update(@Parameter(description = "Part ID") @PathParam("id") Long id,
                            PartsAndSupplyRequest request) {
+        if (request == null) throw new BadRequestException("Request body is required.");
         useCase.update(id, request);
         return Response.noContent().build();
     }

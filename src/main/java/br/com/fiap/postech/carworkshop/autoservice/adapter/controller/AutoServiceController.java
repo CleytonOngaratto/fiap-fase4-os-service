@@ -44,6 +44,7 @@ public class AutoServiceController {
     @RolesAllowed("ADMIN")
     @Operation(summary = "Create a new auto service")
     public Response create(AutoServiceRequest request) {
+        if (request == null) throw new BadRequestException("Request body is required.");
         AutoServiceResponse created = useCase.create(request);
         return Response.status(Response.Status.CREATED).entity(created).build();
     }
@@ -54,6 +55,7 @@ public class AutoServiceController {
     @Operation(summary = "Update an auto service")
     public Response update(@Parameter(description = "Service ID") @PathParam("id") Long id,
                            AutoServiceRequest request) {
+        if (request == null) throw new BadRequestException("Request body is required.");
         useCase.update(id, request);
         return Response.noContent().build();
     }
