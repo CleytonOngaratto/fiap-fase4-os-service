@@ -66,7 +66,6 @@ class JwtHelpersTest {
     void testGenerateToken_TokenHasExpiration() throws ParseException {
         String token = jwtTokenAdapter.generateToken("testuser", List.of(UserRoles.USER));
         JsonWebToken jwt = jwtParser.parse(token);
-        assertNotNull(jwt.getExpirationTime());
         assertTrue(jwt.getExpirationTime() > System.currentTimeMillis() / 1000);
     }
 

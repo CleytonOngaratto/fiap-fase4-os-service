@@ -14,12 +14,13 @@ public class SecurityAdapter implements SecurityPort {
 
     private static final int SALT_LENGTH = 16;
     private static final String ALGORITHM = "SHA-256";
+    private static final SecureRandom RANDOM = new SecureRandom();
     private final String secretKey = System.getenv("SECRET_KEY");
 
     @Override
     public String generateSalt() {
         byte[] salt = new byte[SALT_LENGTH];
-        new SecureRandom().nextBytes(salt);
+        RANDOM.nextBytes(salt);
         return Base64.getEncoder().encodeToString(salt);
     }
 
