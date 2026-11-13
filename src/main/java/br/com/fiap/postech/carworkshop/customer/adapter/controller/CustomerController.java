@@ -64,6 +64,7 @@ public class CustomerController {
     @RolesAllowed("ADMIN")
     @Operation(summary = "Create a new customer")
     public Response create(CustomerRequest request) {
+        if (request == null) throw new BadRequestException("Request body is required.");
         CustomerResponse created = useCase.create(request);
         return Response.status(Response.Status.CREATED).entity(created).build();
     }
@@ -74,6 +75,7 @@ public class CustomerController {
     @Operation(summary = "Update customer data")
     public Response update(@Parameter(description = "Customer ID") @PathParam("id") Long id,
                            CustomerRequest request) {
+        if (request == null) throw new BadRequestException("Request body is required.");
         useCase.update(id, request);
         return Response.noContent().build();
     }

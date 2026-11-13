@@ -55,6 +55,7 @@ public class VehicleController {
     @RolesAllowed("ADMIN")
     @Operation(summary = "Create a new vehicle")
     public Response create(VehicleRequest request) {
+        if (request == null) throw new BadRequestException("Request body is required.");
         VehicleResponse created = useCase.create(request);
         return Response.status(Response.Status.CREATED).entity(created).build();
     }
@@ -65,6 +66,7 @@ public class VehicleController {
     @Operation(summary = "Update vehicle data")
     public Response update(@Parameter(description = "Vehicle ID") @PathParam("id") Long id,
                            VehicleRequest request) {
+        if (request == null) throw new BadRequestException("Request body is required.");
         useCase.update(id, request);
         return Response.noContent().build();
     }
