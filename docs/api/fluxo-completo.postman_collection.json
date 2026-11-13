@@ -354,7 +354,12 @@
           ],
           "request": {
             "method": "POST",
-            "header": [],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": "{{baseUrl}}/execution/v1/work-orders/{{workOrderId}}/diagnosis/start",
             "auth": {
               "type": "bearer",
@@ -474,7 +479,12 @@
           ],
           "request": {
             "method": "POST",
-            "header": [],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": "{{baseUrl}}/billing/v1/budgets/{{budgetId}}/approve",
             "auth": {
               "type": "bearer",
@@ -597,7 +607,12 @@
           ],
           "request": {
             "method": "POST",
-            "header": [],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": "{{baseUrl}}/execution/v1/work-orders/{{workOrderId}}/repair/start",
             "auth": {
               "type": "bearer",
@@ -635,7 +650,12 @@
           ],
           "request": {
             "method": "POST",
-            "header": [],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": "{{baseUrl}}/execution/v1/work-orders/{{workOrderId}}/repair/complete",
             "auth": {
               "type": "bearer",
@@ -702,7 +722,12 @@
           ],
           "request": {
             "method": "PATCH",
-            "header": [],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": "{{baseUrl}}/carworkshop/v1/work-orders/{{workOrderId}}/deliver",
             "auth": {
               "type": "bearer",
@@ -731,7 +756,12 @@
           ],
           "request": {
             "method": "POST",
-            "header": [],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": "{{baseUrl}}/carworkshop/v1/work-orders/{{workOrderId}}/cancel",
             "auth": {
               "type": "bearer",
