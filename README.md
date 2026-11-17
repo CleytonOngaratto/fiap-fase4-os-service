@@ -6,6 +6,8 @@
 Ordem de Serviço (OS Service) da Fase 4 do Tech Challenge (FIAP SOAT): abertura, status e histórico da OS,
 cadastros, filiais e o orquestrador da Saga. Quarkus.
 
+> 🎥 **Vídeo demo (Fase 4):** https://www.youtube.com/watch?v=cGmGdD8VNM4
+
 > Evolução de [fiap-fase3-app](https://github.com/CleytonOngaratto/fiap-fase3-app). Arquitetura em
 > [`docs/arquitetura/`](docs/arquitetura/README.md), com o [diagrama geral](docs/arquitetura/componentes.md) dos três
 > serviços.
